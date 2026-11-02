@@ -24,5 +24,6 @@ check "조건 없는 수정 거부"               400 "$(code "${H[@]}" -X PATCH
 check "잘못된 열 이름 거부 (인젝션)"        400 "$(code "${H[@]}" "$BASE/rest/v1/mlng_lots?select=id;drop%20table%20x")"
 check "없는 표 거부"                      404 "$(code "${H[@]}" "$BASE/rest/v1/pg_shadow")"
 check "삭제 요청 거부"                     405 "$(code "${H[@]}" -X DELETE "$BASE/rest/v1/mlng_purchase_orders?id=eq.$ID")"
+check "공정 통합 AI 상태"                200 "$(code "$BASE/ai/v1/status")"
 echo "smoke $pass/$((pass+fail))"
 [ "$fail" -eq 0 ]

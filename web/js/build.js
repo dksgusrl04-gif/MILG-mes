@@ -1,11 +1,11 @@
 /* 자동 생성 — tools/stamp_version.py. 손으로 고치지 않는다 */
 window.MLNG_BUILD = {
- "hash": "43b7fcd471f81436c7879e86cdeb066451169726899fd2be2b9955aafe3e6229",
+ "hash": "a0a139182a52ddae3b5236d4d655db574407ae6f0d04f35faf0d830865f1cc2d",
  "files": {
   "js/runtime.js": "278a8aece5a7e153",
   "js/config.js": "eb7db1e66ab06c9d",
   "js/data.js": "5019365efa45e597",
-  "js/core.js": "597f45e0b2880514",
+  "js/core.js": "6878c75278ccb2f1",
   "js/xlsx.js": "d0769185ddecb37b",
   "js/mod_common.js": "69c2fc97d82d1160",
   "js/mod_line.js": "c80254288d11c84d",
@@ -44,8 +44,9 @@ window.MLNG_BUILD = {
   "js/mod_report.js": "c0de706237aa073b",
   "js/mod_assume.js": "4100619fabecf235",
   "js/mod_spc.js": "ae3fef41dffa8ad4",
+  "js/mod_ai.js": "4f2fe1a9e718820b",
   "js/mod_flow.js": "acc7cbe6ef459d95",
   "js/boot.js": "ff48c44de6b1a781",
-  "css/style.css": "fe9990aeac9ebeae"
+  "css/style.css": "5b6c0e6a519561f5"
  }
 };

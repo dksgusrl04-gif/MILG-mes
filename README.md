@@ -127,6 +127,12 @@ supabase functions deploy mlng-ask --no-verify-jwt
 - 데모 키는 브라우저에서 만든다. 운영에서는 회사별 키를 서버(HSM/KMS)에 두고 서명 함수로만 서명해야 한다
 - 연합 학습은 시뮬레이션, 탄소 계수는 예시값, 전자 계약의 법적 효력은 별도 검토가 필요하다
 
+## 공정 통합 AI (ai/)
+- 칼럼 이름 · 설명 · 단위 · 값 모양으로 **칼럼 뜻을 스스로 해석** → 공정이 달라도 같은 «의미 슬롯» → 8개 공정(MLNG 5 + 공개 3)을 **한 모델이 누적 학습** (베이즈 사후분포 갱신 · 망각 · 신뢰 게이트) → LOT 추적으로 **앞 공정까지 원인 기여**
+- 검증: 시간순 예측 후 학습 · 처음 보는 공정(미리 배운 모델 vs 처음부터) · 정답을 심은 가상 데이터(공정 간 원인) · 처음 보는 칼럼 이름 72개
+- 학습은 Python(`python -m mlng_ai train`), 화면은 결과물(`web/data/ai_model.json`)만 읽어 GitHub Pages 에서도 동작 · 서버에서는 `/ai/v1/update` 로 새 데이터를 계속 학습
+- 자세한 내용 · 수치: [ai/README.md](ai/README.md) · [ai/reports/report.md](ai/reports/report.md)
+
 ## 자체 서버 (server/)
 - Supabase 대신 **내 VM 에서 직접**: Nginx(화면 · HTTPS) + FastAPI(같은 REST 문법 · Claude 중계) + PostgreSQL(같은 스키마 · RLS) + 매일 백업 — `docker compose up -d --build` 한 줄
 - 화면 코드는 그대로: Nginx 가 `js/runtime.js` 로 «이 서버 주소 · 공개 키» 를 내려 주면 `config.js` 값을 덮어쓴다 (GitHub Pages 에서는 빈 파일)

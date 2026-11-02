@@ -33,7 +33,9 @@ services:
       retries: 10
 
   api:
-    build: ./api
+    build:
+      context: ..                       # 저장소 루트 — ai/ (공정 통합 AI) 를 같이 넣는다
+      dockerfile: server/api/Dockerfile
     restart: unless-stopped
     depends_on:
       db: { condition: service_healthy }
@@ -44,7 +46,10 @@ services:
       ASK_MODEL: ${ASK_MODEL:-}
       ALLOW_ORIGINS: ${ALLOW_ORIGINS:-*}
       APP_VERSION: ${APP_VERSION:-dev}
+      AI_STATE_DIR: /data/ai
       TZ: Asia/Seoul
+    volumes:
+      - aidata:/data/ai                 # 공정 통합 AI 누적 학습 상태 (다시 빌드해도 유지)
 
   web:
     image: nginx:1.27-alpine
@@ -103,6 +108,7 @@ services:
       - acme:/var/www/certbot
 
 volumes:
+  aidata:
   dbdata:
   certs:
   acme:

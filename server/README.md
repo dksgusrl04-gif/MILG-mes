@@ -106,6 +106,7 @@ DNS A 레코드 → 서버 IP, `.env` 에 `DOMAIN=` · `LETSENCRYPT_EMAIL=` → 
 | 복원 | `bash scripts/restore.sh backups/mlng_YYYYMMDD_HHMM.sql.gz` |
 | DB 직접 보기 | `docker compose exec db psql -U postgres -d mlng` |
 | API 문서 | `http://<주소>/api/docs` |
+| 공정 통합 AI | `curl <주소>/ai/v1/status` · 새 데이터 학습 `POST /ai/v1/update {process, rows}` (상태는 docker 볼륨 `aidata`) |
 
 ## 5. 보안 설계 (질문 받으면 이렇게)
 

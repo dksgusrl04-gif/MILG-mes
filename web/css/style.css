@@ -1108,3 +1108,32 @@ ul.plain.cbasis{font-size:12px;color:var(--ink-2);margin:8px 0 0;padding-left:16
 .ptab2.wr td{white-space:normal;height:auto;padding-top:9px;padding-bottom:9px;line-height:1.45}
 .ptab2 col.c-how{width:230px}
 .ptab2.lv{min-width:0}.ptab2.lv col.c-n{width:58px}.ptab2.lv col.c-ci2{width:96px}
+
+/* ── 5.7 공정 통합 AI */
+.xtab{table-layout:fixed;width:100%}
+.xtab col.c-col{width:170px}.xtab col.c-role{width:150px}.xtab col.c-q{width:130px}.xtab col.c-cf{width:96px}.xtab col.c-n{width:96px}.xtab col.c-gate{width:170px}
+.xtab col.c-ci{width:110px}.xtab col.c-rk{width:140px}.xtab col.c-p2{width:120px}
+.xtab td{height:38px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xtab td.wrap{white-space:normal;line-height:1.35;font-size:12px}
+.xbar{display:inline-block;width:64px;height:6px;border-radius:3px;background:var(--chart-grid);vertical-align:middle;overflow:hidden}
+.xbar i{display:block;height:100%;background:var(--ok-fill)}
+.xbar i.lo{background:var(--warn)}
+.grid.xtr{display:grid;grid-template-columns:minmax(280px,1fr) minmax(0,2fr);gap:16px;align-items:stretch}
+@media(max-width:1100px){.grid.xtr{grid-template-columns:1fr}}
+.xlist{max-height:520px;overflow:auto}
+.xsum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:4px 0 6px}
+.xsum div{border:1px solid var(--line);border-radius:8px;padding:8px 12px;display:flex;flex-direction:column;gap:2px}
+.xsum span{font-size:12px;color:var(--muted)}.xsum b{font-size:20px;font-variant-numeric:tabular-nums}
+.xctr{display:flex;flex-direction:column}
+.xc{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 64px;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.xc:last-child{border-bottom:0}
+.xc.up .xn b::before{content:'앞 공정';font-size:10.5px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:4px;padding:1px 5px;margin-right:6px;vertical-align:1px}
+.xn{display:flex;flex-direction:column;min-width:0}.xn small{color:var(--muted);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xg{position:relative;height:16px}
+.xg i{position:absolute;top:0;bottom:0}
+.xg i.z{left:50%;width:1px;background:var(--chart-axis);opacity:.6}
+.xg i.ci{top:6px;bottom:6px;background:var(--chart-grid);border-radius:2px}
+.xg i.pt{width:10px;height:10px;top:3px;border-radius:50%;margin-left:-5px}
+.xg i.pt.pos{background:var(--danger)}.xg i.pt.neg{background:var(--ok-fill)}
+.xv{text-align:right;font-variant-numeric:tabular-nums;font-weight:650}
+.xv.sig{color:var(--danger-ink)}

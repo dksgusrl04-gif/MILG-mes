@@ -113,6 +113,12 @@ const ok = (c, m) => { if (c) pass++; else fails.push(m); console.log(`${c ? '�
   ok(await ev(() => MLNG.ml.trustOf('heater').level !== 'ok' && MLNG.ml.demand().bt && MLNG.ml.demand().bt.n > 10), '미검증 모델 신뢰 낮춤 · 수요 백테스트');
   await go('cases'); await W(); await p.click('[data-csel^="CS-HEAT"]'); await W(); ok(await ev(() => document.querySelectorAll('.cdet .arpt .ar-s').length === 6 && !!document.querySelector('.cdet .arpt svg.cc')), '품질 이슈 상세 — 분석 보고서 6단계');
 
+  // 5.7 공정 통합 AI
+  await go('xai'); await W(500); ok(await ev(() => !!MLNG.aiModel() && MLNG.aiModel().sources.length >= 5 && /처음 보는 칼럼 해석/.test(document.querySelector('#view').innerText)), '공정 통합 AI 결과물 · 요약');
+  ok(await ev(() => document.querySelectorAll('#view .xtab tbody tr').length >= 10), '칼럼 의미 해석 표');
+  for (const t of ['learn', 'cold', 'trace']) { await p.click(`[data-xa="tab|${t}"]`); await W(300); ok(await ev(() => document.querySelector('#view').innerText.length > 300), `공정 통합 AI — ${t}`); }
+  ok(await ev(() => document.querySelectorAll('#view .xc').length >= 2), '원인 추적 — 불량 기여');
+
   // 끝: 모든 동작 뒤에도 원장이 온전한가
   await go('net_ledger'); await W(); await p.click('#lg-verify'); await W(1000); ok(/모두 사슬과 서명이 맞습니다/.test(await note()), '모든 시나리오 뒤 원장 검증');
   ok(!errs.length, `페이지 오류 ${errs.length}건 ${errs.slice(0, 3).join(' / ')}`);

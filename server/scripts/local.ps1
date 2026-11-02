@@ -5,7 +5,7 @@
     powershell -ExecutionPolicy Bypass -File scripts\local.ps1 -Public      # + 인터넷 공개 주소 (https://xxxx.trycloudflare.com)
     powershell -ExecutionPolicy Bypass -File scripts\local.ps1 -Stop        # 멈추기 (데이터는 남음)
     powershell -ExecutionPolicy Bypass -File scripts\local.ps1 -Reset       # 멈추고 DB 까지 지우기
-  하는 일: Docker 확인 → .env (무작위 비밀번호) → docker compose up --build → 요청 시험 12개 → 브라우저 열기
+  하는 일: Docker 확인 → .env (무작위 비밀번호) → docker compose up --build → 요청 시험 13개 → 브라우저 열기
 #>
 param([int]$Port = 8080, [switch]$Public, [switch]$Stop, [switch]$Reset)
 $ErrorActionPreference = 'Continue'   # docker 가 진행 상황을 stderr 로 쓰므로 Stop 이면 PowerShell 5.1 이 오류로 착각한다
@@ -40,6 +40,26 @@ if (-not (Test-Path .env)) {
   [IO.File]::WriteAllText((Join-Path (Get-Location) '.env'), $envText, (New-Object System.Text.UTF8Encoding($false)))
   Say "[.env] 만들었습니다 (비밀번호 무작위 · 포트 $Port). Claude 질의를 쓰려면 .env 의 ANTHROPIC_API_KEY 를 채우고 다시 실행하세요." Green
 }
+# 2-1) 포트 — 이미 다른 프로그램이 쓰고 있으면 비어 있는 포트로 바꿔 .env 에 적는다 (이 서버가 이미 떠 있으면 그대로)
+function PortFree($p) { try { $l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $p); $l.Start(); $l.Stop(); return $true } catch { return $false } }
+function SetEnv($k, $v) {
+  $t = [IO.File]::ReadAllText((Join-Path (Get-Location) '.env'))
+  if ($t -match "(?m)^$k=") { $t = $t -replace "(?m)^$k=.*", "$k=$v" } else { $t = $t.TrimEnd("`n") + "`n$k=$v`n" }
+  [IO.File]::WriteAllText((Join-Path (Get-Location) '.env'), $t, (New-Object System.Text.UTF8Encoding($false)))
+}
+function EnvVal($k) { $m = Select-String -Path .env -Pattern "^$k=(.*)$" -Encoding UTF8 | Select-Object -Last 1; if ($m) { $m.Matches[0].Groups[1].Value } else { '' } }
+$webUp = (docker compose ps -q --status running web 2>$null)
+if (-not $webUp) {
+  $cur = [int](EnvVal 'WEB_PORT'); if (-not $cur) { $cur = $Port }
+  if (-not (PortFree $cur)) {
+    $new = @(8080, 8088, 8090, 8888, 18080, 28080) | Where-Object { $_ -ne $cur -and (PortFree $_) } | Select-Object -First 1
+    if (-not $new) { Say '비어 있는 포트를 찾지 못했습니다 — .env 의 WEB_PORT 를 직접 바꿔 주세요' Red; exit 1 }
+    Say "[포트] $cur 은(는) 다른 프로그램이 사용 중 → $new 으로 바꿉니다" Yellow; SetEnv 'WEB_PORT' $new
+  }
+  # 내 PC 에서는 HTTPS(443) 를 쓰지 않으므로 겹치지 않는 포트로 비켜 둔다
+  $hp = [int](EnvVal 'WEB_HTTPS_PORT')
+  if (-not $hp -or -not (PortFree $hp)) { $nh = @(8443, 18443, 28443) | Where-Object { PortFree $_ } | Select-Object -First 1; if ($nh) { SetEnv 'WEB_HTTPS_PORT' $nh } }
+}
 $envMap = @{}; Get-Content .env -Encoding UTF8 | Where-Object { $_ -match '^\s*([A-Z_]+)=(.*)$' } | ForEach-Object { $envMap[$Matches[1]] = $Matches[2] }
 $Port = [int]($envMap['WEB_PORT']); if (-not $Port) { $Port = 80 }
 $Base = if ($Port -eq 80) { 'http://localhost' } else { "http://localhost:$Port" }
@@ -49,7 +69,7 @@ Say '[실행] docker compose up --build (처음은 3~5분)'
 docker compose up -d --build --wait --wait-timeout 300
 if ($LASTEXITCODE -ne 0) { Say '실행 실패 — 아래 로그를 확인하세요' Red; docker compose logs --tail 40; exit 1 }
 
-# 4) 요청 시험 (scripts/smoke.sh 와 같은 12개)
+# 4) 요청 시험 (scripts/smoke.sh 와 같은 13개)
 $Key = $envMap['PUBLIC_API_KEY']; $H = @{ apikey = $Key }
 function Code($method, $url, $body, $headers) {
   try {
@@ -70,12 +90,13 @@ $tests = @(
   @('조건 없는 수정 거부', 400, (Code PATCH "$Base/rest/v1/mlng_purchase_orders" '{"status":"approved"}' $H)),
   @('잘못된 열 이름 거부 (인젝션)', 400, (Code GET "$Base/rest/v1/mlng_lots?select=id;drop%20table%20x" $null $H)),
   @('없는 표 거부', 404, (Code GET "$Base/rest/v1/pg_shadow" $null $H)),
-  @('삭제 요청 거부', 405, (Code DELETE "$Base/rest/v1/mlng_purchase_orders?id=eq.$id" $null $H))
+  @('삭제 요청 거부', 405, (Code DELETE "$Base/rest/v1/mlng_purchase_orders?id=eq.$id" $null $H)),
+  @('공정 통합 AI 상태', 200, (Code GET "$Base/ai/v1/status" $null @{}))
 )
 $ok = 0; foreach ($t in $tests) { if ($t[1] -eq $t[2]) { $ok++; Say "✓ $($t[0])" Green } else { Say "✕ $($t[0]) (기대 $($t[1]), 실제 $($t[2]))" Red } }
 $rt = try { (Invoke-WebRequest "$Base/js/runtime.js" -UseBasicParsing).Content } catch { '' }
 if ($rt -match 'location.origin') { $ok++; Say '✓ 화면 설정 runtime.js (이 서버 주소)' Green } else { Say '✕ 화면 설정 runtime.js' Red }
-Say "smoke $ok/12" $(if ($ok -eq 12) { 'Green' } else { 'Red' })
+Say "smoke $ok/13" $(if ($ok -eq 13) { 'Green' } else { 'Red' })
 
 # 5) (선택) 인터넷 공개 주소
 if ($Public) {

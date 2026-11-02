@@ -40,3 +40,14 @@ jobs:
       - run: bash server/scripts/smoke.sh http://localhost
       - if: failure()
         run: cd server && docker compose logs --tail 80
+
+  # 공정 통합 AI (ai/): 공개 데이터 받기 → 칼럼 해석 · 누적 학습 · 원인 추적 시험
+  ai:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -r ai/requirements.txt
+      - run: cd ai && python -m mlng_ai fetch
+      - run: cd ai && python -m pytest -q

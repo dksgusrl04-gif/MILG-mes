@@ -180,7 +180,7 @@
     { id: 'ship', t: '출하', i: 'gate', tabs: [['gate', '출하 승인']] },
   ];
   M.NAV_MORE = [
-    ['분석', [['cost', '품질 비용(COPQ)'], ['replay', '과거 시점 조회'], ['models', 'AI 모델 상태'], ['mval', '예측 모델 검증'], ['prove', 'AI 판정 이력']]],
+    ['분석', [['cost', '품질 비용(COPQ)'], ['replay', '과거 시점 조회'], ['models', 'AI 모델 상태'], ['mval', '예측 모델 검증'], ['xai', '공정 통합 AI'], ['prove', 'AI 판정 이력']]],
     ['AI', [['ask', 'AI 질의응답'], ['agent', 'AI 자동 조치'], ['fed', '공동 학습']]],
     ['데이터 신뢰', [['net_contracts', '데이터 공유 계약'], ['net_ledger', '신뢰 원장'], ['net_security', '보안 구조'], ['pass_cred', '공정 능력 성적서'], ['pass_pcf', '탄소 배출량(PCF)']]],
     ['시스템', [['assume', '가정값 관리'], ['masters', '기준 정보'], ['data', '데이터 상태']]],

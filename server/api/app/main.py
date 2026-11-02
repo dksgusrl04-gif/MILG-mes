@@ -204,3 +204,69 @@ async def mlng_ask(req: Request):
         return JSONResponse({'error': '질문이 너무 잦습니다 — 잠시 후 다시 시도하세요'}, status_code=429)
     status, body = await ask.handle(await req.body())
     return JSONResponse(body, status_code=status)
+
+
+# ── 공정 통합 AI (ai/mlng_ai) — 칼럼 해석 · 누적 학습. 무거워서 처음 부를 때 불러온다
+_AI = None
+
+
+def ai_service():
+    global _AI
+    if _AI is None:
+        import os
+        from mlng_ai.service import Service
+        _AI = Service(os.environ.get('AI_STATE_DIR', '/data/ai'), os.environ.get('AI_SEED', '/srv/ai_seed/model.json'))
+    return _AI
+
+
+async def _ai_rows(req: Request, limit: int):
+    import pandas as pd
+    raw = await req.body()
+    if len(raw) > limit:
+        raise BadRequest('요청이 너무 큽니다', 'AI413', 413)
+    try:
+        body = json.loads(raw or b'{}')
+    except json.JSONDecodeError:
+        raise BadRequest('JSON 이 아닙니다', 'AI400')
+    rows = body.get('rows')
+    if not isinstance(rows, list) or not rows or not all(isinstance(r, dict) for r in rows):
+        raise BadRequest('rows 는 객체 배열이어야 합니다 (예: [{"temp": 850, "bad": 0}, …])', 'AI400')
+    meta = body.get('meta') if isinstance(body.get('meta'), dict) else {}
+    return body, pd.DataFrame(rows), meta
+
+
+@app.get('/ai/v1/status')
+async def ai_status():
+    try:
+        return ai_service().status()
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({'error': f'AI 모듈을 불러오지 못했습니다: {e.__class__.__name__}'}, status_code=503)
+
+
+@app.post('/ai/v1/map')
+async def ai_map(req: Request):
+    """처음 보는 표의 칼럼 해석 — {rows:[{…}], meta:{칼럼:{label,unit}}} → 칼럼마다 역할 · 물리량 · 근거"""
+    if not key_ok(req):
+        return err('apikey 가 없거나 다릅니다', 'PGRST301', 401)
+    try:
+        _, df, meta = await _ai_rows(req, 2_000_000)
+        return {'columns': ai_service().map(df.head(5000), meta)}
+    except BadRequest as e:
+        return err(e.msg, e.code, e.status)
+
+
+@app.post('/ai/v1/update')
+async def ai_update(req: Request):
+    """누적 학습 1회 — {process:'press_line2', rows:[…], meta:{…}} → 먼저 예측해 채점한 결과 + 새 모델 버전"""
+    if not key_ok(req):
+        return err('apikey 가 없거나 다릅니다', 'PGRST301', 401)
+    if limited('ai:' + client_ip(req), 30, 10):
+        return err('학습 요청이 너무 잦습니다', 'AI429', 429)
+    try:
+        body, df, meta = await _ai_rows(req, 4_000_000)
+        import asyncio
+        return await asyncio.to_thread(ai_service().update, str(body.get('process', '')), df, meta)
+    except BadRequest as e:
+        return err(e.msg, e.code, e.status)
+    except ValueError as e:
+        return err(str(e), 'AI400', 400)
