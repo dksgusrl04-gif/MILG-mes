@@ -1143,3 +1143,8 @@ ul.plain.cbasis{font-size:12px;color:var(--ink-2);margin:8px 0 0;padding-left:16
 .xmemo-out{margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--chart-grid);min-height:22px;line-height:1.6}
 .xmemo-out mark{background:var(--warn-soft,#FEF0C7);color:var(--warn-ink);border-radius:3px;padding:0 2px}
 .okc{color:var(--ok-ink)}
+/* 5.7 데이터 진단 */
+.xdx-in{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--ink-2);margin:2px 0 10px}
+.xdx-in .inp{width:96px;padding:4px 8px;border:1px solid var(--line-in);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font:inherit;text-align:right}
+.xsumt td{font-size:15px;font-weight:650}
+.xnext{margin:10px 0 0;padding-left:20px;font-size:13.5px;line-height:1.6}

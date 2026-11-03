@@ -107,6 +107,30 @@ DNS A 레코드 → 서버 IP, `.env` 에 `DOMAIN=` · `LETSENCRYPT_EMAIL=` → 
 | DB 직접 보기 | `docker compose exec db psql -U postgres -d mlng` |
 | API 문서 | `http://<주소>/api/docs` |
 | 공정 통합 AI | `curl <주소>/ai/v1/status` · 새 데이터 학습 `POST /ai/v1/update {process, rows}` (상태는 docker 볼륨 `aidata`) |
+| 파트너 키 | 발급 `docker compose exec api python -m app.tenants issue --tenant acme --partner "에이스MES"` · 목록 `… list` · 해지 `… revoke --tenant acme` · 사용량 `… usage` |
+
+## 4-1. AI 엔진 API (파트너 판매용)
+
+파트너(MES · SI 업체)는 키 하나로 엔진을 쓴다. 파트너마다 모델 상태가 따로 쌓이고(공통 모델에서 출발), 요청마다 사용량이 기록된다.
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /ai/v1/status` | 이 파트너의 공정 목록 · 학습 행 수 · 신뢰 게이트 |
+| `GET /ai/v1/usage` | 이번 달 요청 · 처리 행 수 · 한도 |
+| `POST /ai/v1/map` | 칼럼 해석 `{rows | csv, meta}` |
+| `POST /ai/v1/update` | 누적 학습 `{process, rows | csv}` — 먼저 예측해 채점한 뒤 학습 |
+| `POST /ai/v1/predict` | 위험도만 `{process, rows | csv}` — 행마다 기대 불량 · 확률 · 키운 칼럼 (처음 보는 공정은 학습 0건 순위) |
+| `POST /ai/v1/diagnose` | 데이터 진단 `{csv, unit_cost, name, format:'html'}` — 칼럼 해석 · 품질 · 불량 원인 후보 · 손실 금액 리포트 |
+
+인증: 헤더 `X-MLNG-Key: mlng_…` (또는 `Authorization: Bearer …`). 키 원문은 서버에 저장하지 않는다(SHA-256 만).
+월 한도를 넘으면 402, 키가 틀리면 401. 키 파일이 없으면 데모용 «열린 모드», 운영은 `.env` 에 `AI_REQUIRE_KEY=1`.
+
+```bash
+curl -s -X POST https://<주소>/ai/v1/diagnose -H "X-MLNG-Key: $KEY" -H 'content-type: application/json' \
+  --data "$(jq -Rs '{csv: ., unit_cost: 15000, name: "line2.csv", format: "html"}' line2.csv)" > 진단.html
+```
+
+오프라인(파일 하나): `cd ai && python -m mlng_ai diagnose 고객데이터.csv --unit-cost 15000`
 
 ## 5. 보안 설계 (질문 받으면 이렇게)
 

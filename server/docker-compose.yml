@@ -47,6 +47,7 @@ services:
       ALLOW_ORIGINS: ${ALLOW_ORIGINS:-*}
       APP_VERSION: ${APP_VERSION:-dev}
       AI_STATE_DIR: /data/ai
+      AI_REQUIRE_KEY: ${AI_REQUIRE_KEY:-0}  # 1 = 파트너 키 없이는 AI 엔진 거부 (운영)
       TZ: Asia/Seoul
     volumes:
       - aidata:/data/ai                 # 공정 통합 AI 누적 학습 상태 (다시 빌드해도 유지)

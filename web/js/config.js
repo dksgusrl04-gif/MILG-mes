@@ -8,6 +8,8 @@
 window.MLNG_CONFIG = {
   SUPABASE_URL: 'https://vwgfeutvcvogutxuhcxt.supabase.co',   // MLNG MES 전용 프로젝트
   SUPABASE_ANON_KEY: 'sb_publishable_7FxcyivB8vrrJJdrWTSl9g_FZUiEV17',   // Publishable key (공개용)
+  // 공정 통합 AI 엔진 주소 (데이터 진단 업로드) — 비우면 SUPABASE_URL 을 쓴다 (자체 서버에서는 같은 주소)
+  AI_URL: '',
 
   // 아직 이 셸에 합치지 않은 모듈 — 공정 흐름에서 누르면 새 탭으로 연다 (비우면 링크 없음)
   LINKS: {

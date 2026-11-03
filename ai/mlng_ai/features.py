@@ -239,8 +239,9 @@ def outcome_vector(s: pd.Series, cs: ColumnSense) -> np.ndarray:
             ev = v.fillna(0).clip(lower=0).to_numpy(float)   # 개수
     else:                                                 # 글자: «좋은 쪽» 단어가 없는 값이 사건 (band / noband)
         t = s.astype(str).str.lower()
-        good = t.str.contains('no ?band|noband|ok|pass|good|normal|합격|양품', regex=True)
-        ev = (~good).astype(float).to_numpy()
+        bad = t.str.contains(r'불합격|불량|부적합|^ng$|\bng\b|fail|reject|defect|^band$|^x$', regex=True)      # 한국 현장 표기: 불량 · NG · 불합격
+        good = t.str.contains(r'no ?band|noband|\bok\b|^ok|pass|good|normal|합격|양품|적합|^o$', regex=True) & ~bad
+        ev = (bad | ~good).astype(float).to_numpy()
     return ev
 
 

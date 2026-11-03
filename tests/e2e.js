@@ -120,6 +120,15 @@ const ok = (c, m) => { if (c) pass++; else fails.push(m); console.log(`${c ? '�
   ok(await ev(() => document.querySelectorAll('#view .xc').length >= 2), '원인 추적 — 불량 기여');
   await p.click('[data-xa="tab|raw"]'); await W(300); ok(await ev(() => /적산/.test(document.querySelector('#view').innerText) && !!document.querySelector('#xa-memo')), '적산 · 비정형 화면');
   await p.fill('#xa-memo', '주축 소음 있고 진동 느낌'); await W(300); ok(await ev(() => document.querySelectorAll('.xmemo-out mark').length >= 2), '메모 이상 징후 단어 표시');
+  await p.click('[data-xa="tab|dx"]'); await W(300);
+  ok(await ev(() => /불량 원인 후보/.test(document.querySelector('#view').innerText) && /데모 결과/.test(document.querySelector('#view').innerText)), '데이터 진단 — 데모 결과');
+  ok(await ev(() => [...document.querySelectorAll('#view .xtab')].some(t => /나쁜 구간/.test(t.innerText) && t.querySelectorAll('tbody tr').length >= 3)), '데이터 진단 — 원인 후보 표');
+  await p.route('**/ai/v1/diagnose', async r => { const b = JSON.parse(r.request().postData() || '{}'); const s = await p.evaluate(() => MLNG.aiModel().diagnose_sample);
+    await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...s, name: b.name, unit_cost: b.unit_cost }) }); });
+  await p.evaluate(() => { window.MLNG_CONFIG.AI_URL = 'https://ai.mlng.test'; });
+  await p.setInputFiles('#xa-dx', { name: '고객사_라인2.csv', mimeType: 'text/csv', buffer: Buffer.from('온도,NG\n850,0\n870,1\n') }); await W(800);
+  ok(await ev(() => /고객사_라인2\.csv/.test(document.querySelector('#view').innerText) && /업로드한 파일/.test(document.querySelector('#view').innerText)), '데이터 진단 — CSV 업로드 → 서버 진단');
+  await p.unroute('**/ai/v1/diagnose'); await p.evaluate(() => { window.MLNG_CONFIG.AI_URL = ''; });
 
   // 끝: 모든 동작 뒤에도 원장이 온전한가
   await go('net_ledger'); await W(); await p.click('#lg-verify'); await W(1000); ok(/모두 사슬과 서명이 맞습니다/.test(await note()), '모든 시나리오 뒤 원장 검증');

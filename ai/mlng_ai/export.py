@@ -88,6 +88,20 @@ def explain_rows(M, E, k, w):
     return out
 
 
+SAMPLE_UNIT_COST = 15000      # 데모 진단 리포트의 부품 단가 가정 (원)
+
+
+def diagnose_sample(E, M) -> dict | None:
+    """영업 데모: 검사 공정 데이터를 «처음 받은 고객 CSV» 처럼 진단한 결과 (웹 «데이터 진단» 탭)"""
+    from .diagnose import diagnose
+    if 'insp' not in E:
+        return None
+    t = E['insp'].table
+    r = diagnose(t.df, t.meta, unit_cost=SAMPLE_UNIT_COST, model=M, name=f'{t.process} (데모 · 단가 {SAMPLE_UNIT_COST:,}원 가정)')
+    r['factors'] = [{k: v for k, v in f.items() if k != 'levels'} | {'levels': f['levels'][:8]} for f in r['factors']]
+    return r
+
+
 def run(fast: bool = False, write: bool = True) -> dict:
     E = build()
     M, pre, drift, _ = prequential(E)
@@ -116,6 +130,7 @@ def run(fast: bool = False, write: bool = True) -> dict:
         'cold_start': cs, 'injection': inj, 'shared': shared, 'procs': procs,
         'lots': {k: explain_rows(M, E, k, None) for k in LOT_PROCS if k in E},
         'parts': {'insp': [r for r in explain_rows(M, E, 'insp', None) if r['y'] > 0]} if 'insp' in E else {},
+        'diagnose_sample': diagnose_sample(E, M),
     }
     art = _r(art)
     if write:

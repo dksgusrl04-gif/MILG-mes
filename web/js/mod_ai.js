@@ -5,12 +5,14 @@
  *   누적 학습     시간순 «예측 → 채점 → 학습», 공정마다 게이트(모델을 믿는 정도) · 공통 효과
  *   처음 보는 공정 다른 공정으로 미리 배운 모델 vs 그 공정만으로 처음부터 — 적은 데이터에서
  *   원인 추적     LOT · 부품 하나의 불량 기여(앞 공정 포함) + 정답을 심은 가상 데이터 검증
+ *   데이터 진단   고객 CSV → 칼럼 해석 · 품질 · 불량 원인 후보 · 손실(원). 기본은 데모 결과, 자체 서버가 있으면 업로드해 바로 진단
  */
 (function () {
   'use strict';
   const M = window.MLNG, { esc, f, pct } = M;
   let A = window.MLNG_AI || null, loading = null, err = '';
   const st = { tab: 'schema', proc: 'heat', pick: '' };
+  const dx = { r: null, busy: false, err: '', cost: '15000' };
   const load = () => {
     if (A || loading) return;
     loading = fetch('data/ai_model.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : Promise.reject(new Error(r.status))).then(j => { A = j; M.render(); })
@@ -146,13 +148,59 @@
       <p class="note">MLNG 데모 공장의 LOT 연결은 서로 다른 공개 데이터를 이은 것이라 실제 공정 간 인과가 없습니다. 그래서 원인 추적 능력은 정답을 아는 가상 데이터로 따로 검증했습니다.</p></div>`;
   }
 
+  // ── 6. 데이터 진단 (영업 PoC)
+  const ROLEKO = { id: '식별자', time: '시간', outcome: '결과(불량)', outcome_detail: '결과 상세', exposure: '수량', category: '범주', param: '공정 조건', setpoint: '설정값', ignore: '제외', text: '메모 · 문장' };
+  const aiUrl = () => (M.cfg && M.cfg.AI_URL) || ((window.MLNG_CONFIG || {}).AI_URL) || ((window.MLNG_CONFIG || {}).SUPABASE_URL || '').replace(/\/$/, '');
+  async function runDx(file) {
+    if (!aiUrl()) { dx.err = 'AI 엔진 서버가 연결되지 않았습니다 (자체 서버 · 설치형에서 사용) — 지금은 데모 결과'; M.render(); return; }
+    dx.busy = true; dx.err = ''; M.render();
+    try {
+      if (file.size > 5.5e6) throw new Error('파일이 너무 큽니다 (5MB 이하)');
+      const u8 = new Uint8Array(await file.arrayBuffer()); let bin = '';
+      for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+      const res = await fetch(aiUrl() + '/ai/v1/diagnose', { method: 'POST', headers: { 'content-type': 'application/json' },   // CSV(UTF-8 · CP949) · 엑셀 그대로 → 서버가 판별
+        body: JSON.stringify({ file_b64: btoa(bin), unit_cost: dx.cost ? Number(dx.cost) : null, name: file.name }) });
+      if (!res.ok) throw new Error(res.status === 404 ? 'AI 엔진 서버가 연결되지 않았습니다 (자체 서버 · 설치형에서 사용)' : ((await res.json().catch(() => ({}))).message || res.status));
+      dx.r = await res.json();
+    } catch (e) { dx.err = String(e.message || e); }
+    dx.busy = false; M.render();
+  }
+  function vDiag() {
+    const r = dx.r || A.diagnose_sample;
+    if (!r) return '<div class="card" style="margin-top:16px"><div class="empty">진단 결과가 없습니다 — ai/ 에서 python -m mlng_ai train</div></div>';
+    const q = r.quality, fs = r.factors || [], ai = r.ai || {}, mx = Math.max(1, ...fs.map(x => x.lift)), won = v => f(v, 0) + '원';
+    const head = `<div class="card" style="margin-top:16px"><h2>${esc(r.name)}
+        <span class="more"><label class="btn sm">${dx.busy ? '진단 중…' : '파일 진단 (CSV · 엑셀)'}<input id="xa-dx" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden ${dx.busy ? 'disabled' : ''}></label></span></h2>
+      <div class="xdx-in"><span class="tag ${dx.r ? 'j-ok' : 'j-none'}">${dx.r ? '업로드한 파일' : '데모 결과'}</span><span class="muted">${esc(r.created)}</span><label>부품 단가 <input id="xa-cost" class="inp" inputmode="numeric" value="${esc(dx.cost)}"> 원</label>${dx.err ? `<span class="tag j-warn">${esc(dx.err)}</span>` : ''}${dx.r ? ' <a href="#" data-xa="dxr|1">데모 결과로</a>' : ''}</div>
+      <div class="tbx"><table class="tb xtab xsumt"><thead><tr><th class="n">행</th><th class="n">칼럼</th><th class="n">불량률</th><th class="n">불량 손실</th><th class="n">준비도</th><th>결과 칼럼</th><th>기간</th></tr></thead>
+        <tbody><tr><td class="n">${f(q.rows, 0)}</td><td class="n">${q.cols}</td><td class="n">${r.defect_rate != null ? pct(r.defect_rate, 1) : '—'}</td><td class="n">${r.copq ? won(r.copq.total) : '—'}</td>
+          <td class="n">${r.readiness.score} / 100</td><td>${esc(r.outcome || '없음')}</td><td>${q.time_range ? esc(q.time_range.join(' ~ ')) : '—'}</td></tr></tbody></table></div>
+      <ol class="xnext">${(r.next || []).map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>`;
+    const fac = `<div class="card" style="margin-top:16px"><h2>불량 원인 후보 <span class="h2sub">칼럼별 구간 불량률 · z ≥ 2</span></h2>
+      ${fs.length ? `<div class="tbx"><table class="tb xtab"><colgroup><col class="c-n"><col><col><col class="c-n"><col class="c-n"><col class="c-gate"><col style="width:120px"></colgroup>
+        <thead><tr><th class="n">순위</th><th>칼럼</th><th>나쁜 구간</th><th class="n">구간 불량률</th><th class="n">나머지</th><th>배수</th><th class="n">${r.unit_cost ? '초과 손실' : '초과 불량'}</th></tr></thead>
+        <tbody>${fs.map((x, i) => `<tr><td class="n">${i + 1}</td><td>${esc(x.label)}</td><td class="mono">${esc(x.worst)}</td><td class="n">${pct(x.worst_rate, 1)}</td><td class="n">${pct(x.rest_rate, 1)}</td>
+          <td>${bar(x.lift / mx)} <small>${f(x.lift, 1)}×</small></td><td class="n">${r.unit_cost ? won(x.excess * r.unit_cost) : f(x.excess, 1)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="note">초과 = 그 구간 불량률을 나머지 수준으로 낮췄을 때 줄어드는 양(추정). 상관이며, 인과는 현장 확인.</p>` : '<div class="empty">칼럼 하나만으로 뚜렷한 차이가 없습니다 — 여러 조건이 겹치는 경우는 누적 학습에서 다룹니다.</div>'}</div>`;
+    const sig = (ai.signals || []).length ? `<div class="card"><h2>AI 신호 <span class="h2sub">학습 0건 · 공통 효과${ai.zero_shot_auc != null ? ' · AUC ' + f(ai.zero_shot_auc, 2) : ''}</span></h2>
+      <div class="tbx"><table class="tb xtab"><colgroup><col><col><col class="c-n"></colgroup><thead><tr><th>신호</th><th>주로 나온 칼럼</th><th class="n">불량 행 (σ)</th></tr></thead>
+      <tbody>${ai.signals.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.source || '—')}</td><td class="n">+${f(x.gap_sd, 2)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
+    const rd = `<div class="card"><h2>데이터 준비도 <span class="h2sub">${r.readiness.score} / 100</span></h2>
+      <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-role"><col class="c-n"></colgroup><thead><tr><th>항목</th><th>상태</th><th class="n">배점</th></tr></thead>
+      <tbody>${r.readiness.checks.map(c => `<tr><td>${esc(c.item)}</td><td><span class="tag ${c.ok ? 'j-ok' : 'j-danger'}">${c.ok ? '충족' : '부족'}</span></td><td class="n">${c.weight}</td></tr>`).join('')}</tbody></table></div></div>`;
+    const cols = `<div class="card" style="margin-top:16px"><h2>칼럼 해석 <span class="h2sub">${r.columns.length}개</span></h2>
+      <div class="tbx"><table class="tb xtab"><colgroup><col class="c-col"><col class="c-role"><col class="c-n"><col></colgroup><thead><tr><th>칼럼</th><th>역할</th><th class="n">확신도</th><th>근거</th></tr></thead>
+      <tbody>${r.columns.map(c => `<tr><td class="mono">${esc(c.column)}</td><td><span class="tag ${(ROLE[c.role] || ['', 'j-none'])[1]}">${esc(ROLEKO[c.role] || c.role)}</span></td><td class="n">${f(c.confidence, 2)}</td><td class="muted">${esc(c.why)}</td></tr>`).join('')}</tbody></table></div></div>`;
+    return head + fac + `<div class="grid g2" style="margin-top:16px">${sig || ''}${rd}</div>` + cols;
+  }
+
   const V = {};
   V.xai = () => {
     load();
     if (err) return `<div class="card"><div class="empty">${esc(err)}</div></div>`;
     if (!A) return '<div class="card"><div class="empty">공정 통합 AI 결과를 불러오는 중…</div></div>';
-    const body = { schema: vSchema, learn: vLearn, cold: vCold, raw: vRaw, trace: vTrace }[st.tab] || vSchema;
-    return `${kpis()}<div class="spc-sub" style="margin-top:12px">${M.seg('xa', 'tab|' + st.tab, [['tab|schema', '칼럼 해석'], ['tab|learn', '누적 학습'], ['tab|cold', '처음 보는 공정'], ['tab|raw', '적산 · 비정형'], ['tab|trace', '원인 추적']])}
+    const body = { schema: vSchema, learn: vLearn, cold: vCold, raw: vRaw, trace: vTrace, dx: vDiag }[st.tab] || vSchema;
+    return `${kpis()}<div class="spc-sub" style="margin-top:12px">${M.seg('xa', 'tab|' + st.tab, [['tab|schema', '칼럼 해석'], ['tab|learn', '누적 학습'], ['tab|cold', '처음 보는 공정'], ['tab|raw', '적산 · 비정형'], ['tab|trace', '원인 추적'], ['tab|dx', '데이터 진단']])}
       <span class="muted" style="font-size:12px;margin-left:auto">${esc(A.version)} · ${esc(A.built)}</span></div>${body()}`;
   };
   M.aiModel = () => A;
@@ -163,6 +211,10 @@
     bind(root) {
       const ta = root.querySelector('#xa-memo');
       if (ta) ta.oninput = () => { memo = ta.value; const pos = ta.selectionStart; M.render(); const t2 = document.querySelector('#xa-memo'); if (t2) { t2.focus(); t2.setSelectionRange(pos, pos); } };
-      root.querySelectorAll('[data-xa]').forEach(b => b.onclick = e => { e.preventDefault(); const s = b.dataset.xa, i = s.indexOf('|'); st[s.slice(0, i)] = s.slice(i + 1); M.render(); }); },
+      const fi = root.querySelector('#xa-dx'), co = root.querySelector('#xa-cost');
+      if (fi) fi.onchange = () => { if (fi.files && fi.files[0]) runDx(fi.files[0]); };
+      if (co) co.onchange = () => { dx.cost = co.value.replace(/[^0-9.]/g, ''); };
+      root.querySelectorAll('[data-xa]').forEach(b => b.onclick = e => { e.preventDefault(); const s = b.dataset.xa, i = s.indexOf('|');
+        if (s === 'dxr|1') { dx.r = null; dx.err = ''; } else st[s.slice(0, i)] = s.slice(i + 1); M.render(); }); },
   });
 })();

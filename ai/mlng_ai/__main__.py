@@ -4,6 +4,8 @@
   train            전체 학습 · 검증 → ai/state/model.json · web/data/ai_model.json · ai/reports/report.md
   train --fast     검증 일부(처음 보는 공정 · 가상 주입) 생략 — 빠른 확인용
   map 파일.csv     처음 보는 CSV 의 칼럼을 해석해 표로 보여 준다 (--llm: 애매한 칼럼만 Claude 에 물어봄)
+  diagnose 파일.csv|xlsx [--unit-cost 15000] [--out 리포트.html]   (UTF-8 · CP949 자동)
+                   고객 데이터 진단 — 칼럼 해석 · 데이터 품질 · 불량 원인 후보 · 손실 금액 리포트 (HTML)
 """
 import sys
 import warnings
@@ -28,6 +30,23 @@ def main(argv):
         df = pd.read_csv(argv[2])
         for c, s in sense_table(df, llm='--llm' in argv).items():
             print(f"{c[:28]:28s} {s.role:14s} {s.quantity:12s} {s.confidence:.2f}  {'; '.join(s.why)[:70]}")
+    elif cmd == 'diagnose' and len(argv) > 2:
+        from pathlib import Path
+        import pandas as pd
+        from .diagnose import diagnose, read_table, render_html
+        from .model import CumulativeModel
+        opt = lambda k: argv[argv.index(k) + 1] if k in argv and argv.index(k) + 1 < len(argv) else None   # noqa: E731
+        src = Path(argv[2])
+        df = pd.read_csv(src, encoding=opt('--encoding')) if opt('--encoding') else read_table(str(src))
+        seed = Path(__file__).resolve().parent.parent / 'state' / 'model.json'
+        M = CumulativeModel.load(seed) if seed.exists() else None
+        uc = opt('--unit-cost')
+        r = diagnose(df, unit_cost=float(uc) if uc else None, model=M, name=src.name)
+        out = Path(opt('--out') or src.with_suffix('.진단.html'))
+        out.write_text(render_html(r), encoding='utf-8')
+        print(f"결과 칼럼 {r['outcome'] or '없음'} · 준비도 {r['readiness']['score']}/100 · 원인 후보 {len(r['factors'])}개 → {out}")
+        for f in r['factors'][:5]:
+            print(f"  {f['label'][:28]:28s} {f['worst'][:24]:24s} 불량률 {f['worst_rate']:.1%} (나머지 {f['rest_rate']:.1%}, {f['lift']:.1f}배)")
     else:
         print(__doc__)
 

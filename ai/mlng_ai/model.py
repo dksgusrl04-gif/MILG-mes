@@ -55,6 +55,18 @@ class CumulativeModel:
         self.m, self.S = np.concatenate([self.m, m0]), S
         self.phi[p] = [0.0, 0.0]; self.seen[p] = 0.0
 
+    def reset_process(self, p: str):
+        """공정 하나를 모델에서 뺀다 (기준율 · 공정별 효과 · 게이트) — 데이터 파기 요청용"""
+        if p not in self.procs:
+            return
+        a, d = self._idx(p)
+        keep = np.setdiff1d(np.arange(len(self.m)), np.concatenate([[a], d]))
+        self.m, self.S = self.m[keep], self.S[np.ix_(keep, keep)]
+        self.procs.remove(p)
+        for dct in (self.phi, self.seen, self.acc, self.binary, self.gate):
+            dct.pop(p, None)
+        self.version += 1
+
     def design(self, p: str, X: np.ndarray) -> np.ndarray:
         a, d = self._idx(p)
         D = np.zeros((len(X), len(self.m)))

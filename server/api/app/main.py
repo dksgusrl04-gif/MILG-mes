@@ -4,6 +4,8 @@ Supabase 가 해 주던 일 두 가지를 직접 한다.
   /rest/v1/{표}            표 읽기 · 쓰기 (PostgREST 문법, app/rest.py)
   /functions/v1/mlng-ask   질의응답 — Claude API 키를 서버에만 두고 중계 (app/ask.py)
   /health                  상태 확인 (Nginx · docker · 배포 스크립트가 본다)
+  /ai/v1/*                 공정 통합 AI 엔진 — 파트너 키(X-MLNG-Key) · 테넌트별 모델 · 사용량 (app/tenants.py)
+                           status · usage · map · update · predict · diagnose
 
 요청 흐름
   브라우저 ─ HTTPS ─> Nginx ─ /rest, /functions ─> FastAPI(uvicorn) ─> PostgreSQL
@@ -26,7 +28,7 @@ from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from . import ask, settings as S
+from . import ask, settings as S, tenants
 from .rest import BadRequest, Catalog, insert_sql, parse_filter, parse_query, select_sql, update_sql
 
 pool: AsyncConnectionPool | None = None
@@ -63,7 +65,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title='MLNG MES API', version=S.VERSION, lifespan=lifespan, docs_url='/api/docs', openapi_url='/api/openapi.json')
 app.add_middleware(CORSMiddleware, allow_origins=S.ALLOW_ORIGINS, allow_methods=['GET', 'POST', 'PATCH', 'OPTIONS'],
-                   allow_headers=['apikey', 'authorization', 'content-type', 'prefer', 'x-client-info'])
+                   allow_headers=['apikey', 'authorization', 'content-type', 'prefer', 'x-client-info', 'x-mlng-key'])
 
 
 def _default(o):
@@ -206,67 +208,158 @@ async def mlng_ask(req: Request):
     return JSONResponse(body, status_code=status)
 
 
-# ── 공정 통합 AI (ai/mlng_ai) — 칼럼 해석 · 누적 학습. 무거워서 처음 부를 때 불러온다
-_AI = None
+# ── 공정 통합 AI (ai/mlng_ai) — 파트너(테넌트)마다 따로 누적 학습. 무거워서 처음 부를 때 불러온다
+#   인증: X-MLNG-Key (또는 Authorization: Bearer) — app/tenants.py · 키 파일이 없으면 열린 모드(데모)
+_AI: dict = {}
 
 
-def ai_service():
-    global _AI
-    if _AI is None:
+def ai_service(tenant: str = 'public'):
+    """테넌트별 서비스 — 상태는 <AI_STATE_DIR>/tenants/<tenant>/, 첫 상태는 공통 모델(전이 학습)"""
+    if tenant not in _AI:
         import os
         from mlng_ai.service import Service
-        _AI = Service(os.environ.get('AI_STATE_DIR', '/data/ai'), os.environ.get('AI_SEED', '/srv/ai_seed/model.json'))
-    return _AI
+        _AI[tenant] = Service(tenants.state_dir() / 'tenants' / tenant, os.environ.get('AI_SEED', '/srv/ai_seed/model.json'))
+    return _AI[tenant]
+
+
+class AIError(Exception):
+    def __init__(self, msg: str, code: str, status: int = 400):
+        self.msg, self.code, self.status = msg, code, status
+
+
+def _tenant(req: Request) -> dict:
+    t = tenants.resolve(req.headers)
+    if t is None:
+        raise AIError('X-MLNG-Key 가 없거나 유효하지 않습니다', 'AI401', 401)
+    return t
 
 
 async def _ai_rows(req: Request, limit: int):
+    """{rows:[{…}]} 또는 {csv:"칼럼,…\n값,…"} → DataFrame"""
+    import io
     import pandas as pd
     raw = await req.body()
     if len(raw) > limit:
-        raise BadRequest('요청이 너무 큽니다', 'AI413', 413)
+        raise AIError('요청이 너무 큽니다', 'AI413', 413)
     try:
         body = json.loads(raw or b'{}')
     except json.JSONDecodeError:
-        raise BadRequest('JSON 이 아닙니다', 'AI400')
+        raise AIError('JSON 이 아닙니다', 'AI400')
+    if not isinstance(body, dict):
+        raise AIError('JSON 객체여야 합니다', 'AI400')
+    meta = body.get('meta') if isinstance(body.get('meta'), dict) else {}
+    if isinstance(body.get('file_b64'), str) and body['file_b64']:
+        import base64
+        from mlng_ai.diagnose import read_table
+        try:
+            df = read_table(base64.b64decode(body['file_b64'], validate=True), str(body.get('name') or ''))
+        except Exception:  # noqa: BLE001
+            raise AIError('파일을 읽지 못했습니다 (CSV · 엑셀만)', 'AI400')
+        if df.empty:
+            raise AIError('파일에 행이 없습니다', 'AI400')
+        return body, df, meta
+    if isinstance(body.get('csv'), str) and body['csv'].strip():
+        try:
+            df = pd.read_csv(io.StringIO(body['csv']))
+        except Exception:  # noqa: BLE001
+            raise AIError('csv 를 읽지 못했습니다', 'AI400')
+        if df.empty:
+            raise AIError('csv 에 행이 없습니다', 'AI400')
+        return body, df, meta
     rows = body.get('rows')
     if not isinstance(rows, list) or not rows or not all(isinstance(r, dict) for r in rows):
-        raise BadRequest('rows 는 객체 배열이어야 합니다 (예: [{"temp": 850, "bad": 0}, …])', 'AI400')
-    meta = body.get('meta') if isinstance(body.get('meta'), dict) else {}
+        raise AIError('rows 는 객체 배열이어야 합니다 (예: [{"temp": 850, "bad": 0}, …]) — 또는 csv 문자열', 'AI400')
     return body, pd.DataFrame(rows), meta
 
 
-@app.get('/ai/v1/status')
-async def ai_status():
+async def _ai_call(req: Request, endpoint: str, limit: int, fn, rate: int = 60):
+    """공통: 테넌트 확인 → 요청 수 제한 → 월 한도 → 실행 → 사용량 기록"""
+    import asyncio
+    t = None
     try:
-        return ai_service().status()
+        t = _tenant(req)
+        if limited(f"ai:{t['tenant']}:{client_ip(req)}", rate, 10):
+            raise AIError('요청이 너무 잦습니다', 'AI429', 429)
+        body, df, meta = await _ai_rows(req, limit)
+        if tenants.over_quota(t, len(df)):
+            raise AIError('이번 달 처리 한도를 넘었습니다 — 플랜을 확인하세요', 'AI402', 402)
+        res = await asyncio.to_thread(fn, ai_service(t['tenant']), body, df, meta)
+        tenants.record(t['tenant'], endpoint, len(df), ip=client_ip(req), key_hint=t.get('hint', ''))
+        return res
+    except AIError as e:
+        return err(e.msg, e.code, e.status)
+    except ValueError as e:
+        return err(str(e), 'AI400', 400)
+    except Exception as e:  # noqa: BLE001
+        return err(f'AI 처리 중 오류: {e.__class__.__name__}', 'AI500', 500)
+
+
+@app.get('/ai/v1/status')
+async def ai_status(req: Request):
+    try:
+        t = _tenant(req)
+        s = await __import__('asyncio').to_thread(ai_service(t['tenant']).status)
+        return {**s, 'tenant': t['tenant'], 'partner': t.get('partner'), 'plan': t.get('plan'), 'open_mode': tenants.open_mode()}
+    except AIError as e:
+        return err(e.msg, e.code, e.status)
     except Exception as e:  # noqa: BLE001
         return JSONResponse({'error': f'AI 모듈을 불러오지 못했습니다: {e.__class__.__name__}'}, status_code=503)
 
 
+@app.get('/ai/v1/usage')
+async def ai_usage(req: Request):
+    """이번 달 사용량과 한도 — 파트너 정산 · 대시보드용"""
+    try:
+        t = _tenant(req)
+    except AIError as e:
+        return err(e.msg, e.code, e.status)
+    u = tenants.usage(t['tenant']).get(t['tenant'], {'requests': 0, 'rows': 0, 'by_endpoint': {}})
+    return {'tenant': t['tenant'], 'month': dt.date.today().strftime('%Y-%m'), 'quota_rows': t.get('quota'), **u}
+
+
 @app.post('/ai/v1/map')
 async def ai_map(req: Request):
-    """처음 보는 표의 칼럼 해석 — {rows:[{…}], meta:{칼럼:{label,unit}}} → 칼럼마다 역할 · 물리량 · 근거"""
-    if not key_ok(req):
-        return err('apikey 가 없거나 다릅니다', 'PGRST301', 401)
-    try:
-        _, df, meta = await _ai_rows(req, 2_000_000)
-        return {'columns': ai_service().map(df.head(5000), meta)}
-    except BadRequest as e:
-        return err(e.msg, e.code, e.status)
+    """처음 보는 표의 칼럼 해석 — {rows | csv, meta} → 칼럼마다 역할 · 물리량 · 근거"""
+    return await _ai_call(req, 'map', 2_000_000, lambda S, b, df, m: {'columns': S.map(df.head(5000), m)})
 
 
 @app.post('/ai/v1/update')
 async def ai_update(req: Request):
-    """누적 학습 1회 — {process:'press_line2', rows:[…], meta:{…}} → 먼저 예측해 채점한 결과 + 새 모델 버전"""
-    if not key_ok(req):
-        return err('apikey 가 없거나 다릅니다', 'PGRST301', 401)
-    if limited('ai:' + client_ip(req), 30, 10):
-        return err('학습 요청이 너무 잦습니다', 'AI429', 429)
+    """누적 학습 1회 — {process:'press_line2', rows | csv, meta} → 먼저 예측해 채점한 결과 + 새 모델 버전"""
+    return await _ai_call(req, 'update', 4_000_000, lambda S, b, df, m: S.update(str(b.get('process', '')), df, m), rate=30)
+
+
+@app.post('/ai/v1/predict')
+async def ai_predict(req: Request):
+    """학습 없이 위험도 — {process, rows | csv} → 행마다 기대 불량 · 확률 · 키운 쪽. 처음 보는 공정은 공통 효과로 위험 순위"""
+    return await _ai_call(req, 'predict', 2_000_000, lambda S, b, df, m: S.predict(str(b.get('process', '')), df, m))
+
+
+@app.post('/ai/v1/diagnose')
+async def ai_diagnose(req: Request):
+    """데이터 진단 — {rows | csv, meta, unit_cost, name, format:'json'|'html'} → 칼럼 해석 · 품질 · 원인 후보 · 손실"""
+    def run_dx(S, b, df, m):
+        try:
+            uc = float(b['unit_cost']) if b.get('unit_cost') not in (None, '') else None
+        except (TypeError, ValueError):
+            raise ValueError('unit_cost 는 숫자여야 합니다')
+        r = S.diagnose(df.head(200_000), m, unit_cost=uc, name=str(b.get('name') or 'data.csv')[:80])
+        if b.get('format') == 'html':
+            from mlng_ai.diagnose import render_html
+            return Response(render_html(r), media_type='text/html; charset=utf-8')
+        return r
+    return await _ai_call(req, 'diagnose', 8_000_000, run_dx, rate=20)
+
+
+@app.delete('/ai/v1/process/{process}')
+async def ai_forget(process: str, req: Request):
+    """공정 데이터 파기 — 저장된 원본 행을 지우고 이후 학습에서 뺀다 (계약 종료 · 고객 요청 대응, 감사 로그에 남음)"""
     try:
-        body, df, meta = await _ai_rows(req, 4_000_000)
-        import asyncio
-        return await asyncio.to_thread(ai_service().update, str(body.get('process', '')), df, meta)
-    except BadRequest as e:
+        t = _tenant(req)
+        r = await __import__('asyncio').to_thread(ai_service(t['tenant']).forget, process)
+        tenants.record(t['tenant'], 'forget', 0, ip=client_ip(req), key_hint=t.get('hint', ''))
+        return r
+    except AIError as e:
         return err(e.msg, e.code, e.status)
     except ValueError as e:
         return err(str(e), 'AI400', 400)
