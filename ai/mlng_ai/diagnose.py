@@ -212,7 +212,37 @@ def diagnose(df: pd.DataFrame, meta: dict | None = None, unit_cost: float | None
     else:
         nxt.append('데이터 준비도가 충분합니다 — 실시간 예측 · 공정 간 원인 추적(누적 학습)으로 바로 연결할 수 있습니다.')
     res['next'] = nxt
+    res['report_8d'] = eight_d(res)
     return res
+
+
+def eight_d(r: dict) -> dict | None:
+    """품질 클레임 대응용 원인 분석 보고서 초안 (8D 양식의 D2 문제 · D4 원인 · D5 대책 · D6 검증 · D7 재발 방지)
+
+    자동차 부품 협력사가 고객사(OEM)에 내는 8D 보고서에서 데이터로 채울 수 있는 칸만 채운다.
+    D1 팀 · D3 임시 조치 · D8 종결은 사람이 쓴다. 원인은 «후보» — 현장 확인 뒤 확정."""
+    fs = r.get('factors') or []
+    if not r.get('outcome'):
+        return None
+    q = r['quality']
+    d2 = {'period': ' ~ '.join(q['time_range']) if q.get('time_range') else '', 'units': r.get('units'), 'events': r.get('events'),
+          'rate': r.get('defect_rate'), 'loss': (r.get('copq') or {}).get('total'), 'outcome': r['outcome']}
+    d4, d5, d6 = [], [], []
+    for f in fs[:3]:
+        best = min(f['levels'], key=lambda x: x['rate'])
+        d4.append({'column': f['label'], 'worst': f['worst'], 'worst_rate': f['worst_rate'], 'rest_rate': f['rest_rate'], 'lift': f['lift'], 'z': f['z'],
+                   'excess': f['excess']})
+        d5.append({'column': f['label'], 'avoid': f['worst'], 'target': best['level'], 'target_rate': best['rate'],
+                   'action': f"«{f['label']}» 를 {best['level']} 구간으로 관리 ({f['worst']} 구간 진입 시 경보)" if f['kind'] == 'numeric'
+                   else f"«{f['label']}» = {f['worst']} 조건의 작업 표준 · 설비 상태 점검"})
+        d6.append({'column': f['label'], 'metric': '해당 구간 불량률', 'before': f['worst_rate'], 'goal': f['rest_rate']})
+    sig = [s['name'] + (f" ({s['source']})" if s.get('source') else '') for s in ((r.get('ai') or {}).get('signals') or [])[:3]]
+    goal = None
+    if fs and r.get('events'):
+        goal = max(r['events'] - fs[0]['excess'], 0) / max(r.get('units') or 1, 1)
+    return {'d2': d2, 'd4': d4, 'd4_ai': sig, 'd5': d5, 'd6': d6, 'goal_rate': goal,
+            'd7': ['원인 칼럼의 관리 범위를 MES 관리 한계로 등록', '실시간 위험도 감시 (MLNG 예측 API) — 구간 진입 시 작업자 알림', '대책 후 데이터로 누적 학습 → 원인 재확인'],
+            'manual': ['D1 팀 구성', 'D3 임시 조치 (격리 · 전수 검사)', 'D8 종결 · 승인']}
 
 
 # ── HTML 리포트 (단독 파일 · 인쇄용)
@@ -244,6 +274,21 @@ def render_html(r: dict, brand: str = 'MLNG') -> str:
            f"<div class='sub'>기간 {e(' ~ '.join(q['time_range'])) if q.get('time_range') else '-'} · 결과 칼럼 {e(r['outcome'] or '없음')}</div>",
            "<table class='sum'><tr>" + ''.join(f'<th>{e(a)}</th>' for a, _ in k) + '</tr><tr>' + ''.join(f'<td>{e(b)}</td>' for _, b in k) + '</tr></table>']
     out.append('<h2>요약 · 다음 할 일</h2><ol>' + ''.join(f'<li>{e(t)}</li>' for t in r.get('next', [])) + '</ol>')
+    d = r.get('report_8d')
+    if d and d['d4']:
+        d2 = d['d2']
+        out.append("<h2>원인 분석 보고서 초안 (8D)</h2><table><tr><th>항목</th><th>내용</th></tr>"
+                   f"<tr><td>D2 문제 기술</td><td>{e(d2['period'] or '기간 미상')} · {_fmt(d2['units'])}개 중 불량 {_fmt(d2['events'])}건 ({pct(d2['rate'])})"
+                   + (f" · 손실 {d2['loss']:,.0f}원" if d2.get('loss') else '') + '</td></tr>'
+                   + ''.join(f"<tr><td>D4 근본 원인 후보 {i}</td><td>«{e(x['column'])}» {e(x['worst'])} 구간 불량률 {pct(x['worst_rate'])} — 나머지 {pct(x['rest_rate'])}의 {x['lift']:.1f}배 (z {x['z']:.1f})</td></tr>"
+                             for i, x in enumerate(d['d4'], 1))
+                   + (f"<tr><td>D4 AI 신호</td><td>{e(' · '.join(d['d4_ai']))}</td></tr>" if d['d4_ai'] else '')
+                   + ''.join(f"<tr><td>D5 대책 후보 {i}</td><td>{e(x['action'])}</td></tr>" for i, x in enumerate(d['d5'], 1))
+                   + ''.join(f"<tr><td>D6 검증 지표 {i}</td><td>{e(x['column'])} 구간 불량률 {pct(x['before'])} → 목표 {pct(x['goal'])} 이하</td></tr>" for i, x in enumerate(d['d6'], 1))
+                   + (f"<tr><td>D6 전체 목표</td><td>불량률 {pct(r.get('defect_rate'))} → {pct(d['goal_rate'])} (1순위 원인 해소 시 추정)</td></tr>" if d.get('goal_rate') is not None else '')
+                   + ''.join(f"<tr><td>D7 재발 방지</td><td>{e(t)}</td></tr>" for t in d['d7'])
+                   + f"<tr><td>사람이 작성</td><td>{e(' · '.join(d['manual']))}</td></tr></table>"
+                   "<div class='note'>데이터로 채울 수 있는 칸만 자동 작성. 원인은 후보이며 현장 확인 뒤 확정합니다.</div>")
     fs = r.get('factors') or []
     if fs:
         mx = max(f['lift'] for f in fs)

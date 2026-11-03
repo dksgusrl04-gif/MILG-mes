@@ -123,6 +123,7 @@ const ok = (c, m) => { if (c) pass++; else fails.push(m); console.log(`${c ? '�
   await p.click('[data-xa="tab|dx"]'); await W(300);
   ok(await ev(() => /불량 원인 후보/.test(document.querySelector('#view').innerText) && /데모 결과/.test(document.querySelector('#view').innerText)), '데이터 진단 — 데모 결과');
   ok(await ev(() => [...document.querySelectorAll('#view .xtab')].some(t => /나쁜 구간/.test(t.innerText) && t.querySelectorAll('tbody tr').length >= 3)), '데이터 진단 — 원인 후보 표');
+  ok(await ev(() => /원인 분석 보고서 초안 \(8D\)/.test(document.querySelector('#view').innerText) && /D5 대책/.test(document.querySelector('#view').innerText)), '데이터 진단 — 8D 보고서 초안');
   await p.route('**/ai/v1/diagnose', async r => { const b = JSON.parse(r.request().postData() || '{}'); const s = await p.evaluate(() => MLNG.aiModel().diagnose_sample);
     await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...s, name: b.name, unit_cost: b.unit_cost }) }); });
   await p.evaluate(() => { window.MLNG_CONFIG.AI_URL = 'https://ai.mlng.test'; });

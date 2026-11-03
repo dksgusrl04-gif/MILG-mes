@@ -191,7 +191,15 @@
     const cols = `<div class="card" style="margin-top:16px"><h2>칼럼 해석 <span class="h2sub">${r.columns.length}개</span></h2>
       <div class="tbx"><table class="tb xtab"><colgroup><col class="c-col"><col class="c-role"><col class="c-n"><col></colgroup><thead><tr><th>칼럼</th><th>역할</th><th class="n">확신도</th><th>근거</th></tr></thead>
       <tbody>${r.columns.map(c => `<tr><td class="mono">${esc(c.column)}</td><td><span class="tag ${(ROLE[c.role] || ['', 'j-none'])[1]}">${esc(ROLEKO[c.role] || c.role)}</span></td><td class="n">${f(c.confidence, 2)}</td><td class="muted">${esc(c.why)}</td></tr>`).join('')}</tbody></table></div></div>`;
-    return head + fac + `<div class="grid g2" style="margin-top:16px">${sig || ''}${rd}</div>` + cols;
+    const d8 = r.report_8d, e8 = d8 && d8.d4.length ? `<div class="card" style="margin-top:16px"><h2>원인 분석 보고서 초안 (8D)</h2>
+      <div class="tbx"><table class="tb xtab"><colgroup><col class="c-p3"><col></colgroup><thead><tr><th>항목</th><th>내용</th></tr></thead><tbody>
+        <tr><td>D2 문제</td><td>${f(d8.d2.units, 0)}개 중 불량 ${f(d8.d2.events, 0)}건 (${pct(d8.d2.rate, 1)})${d8.d2.loss ? ' · 손실 ' + won(d8.d2.loss) : ''}</td></tr>
+        ${d8.d4.map((x, i) => `<tr><td>D4 원인 후보 ${i + 1}</td><td>${esc(x.column)} <span class="mono">${esc(x.worst)}</span> — 불량률 ${pct(x.worst_rate, 1)}, 나머지의 ${f(x.lift, 1)}배</td></tr>`).join('')}
+        ${d8.d5.map((x, i) => `<tr><td>D5 대책 ${i + 1}</td><td>${esc(x.action)}</td></tr>`).join('')}
+        ${d8.goal_rate != null ? `<tr><td>D6 목표</td><td>불량률 ${pct(r.defect_rate, 1)} → ${pct(d8.goal_rate, 1)} (1순위 원인 해소 시 추정)</td></tr>` : ''}
+        ${d8.d7.map(t => `<tr><td>D7 재발 방지</td><td>${esc(t)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="note">데이터로 채울 수 있는 칸만 자동 작성 · D1 팀 · D3 임시 조치 · D8 종결은 담당자가 작성</p></div>` : '';
+    return head + e8 + fac + `<div class="grid g2" style="margin-top:16px">${sig || ''}${rd}</div>` + cols;
   }
 
   const V = {};

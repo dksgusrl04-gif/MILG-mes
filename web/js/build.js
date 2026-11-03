@@ -1,6 +1,6 @@
 /* 자동 생성 — tools/stamp_version.py. 손으로 고치지 않는다 */
 window.MLNG_BUILD = {
- "hash": "9a2f0e0591270d368146b378c862ec641a6efd1b71c0d37660d3208727de06cf",
+ "hash": "332ba4008fd86e46114908bdb5b73ad3b6b8cdec7812af7d55493880ac8b916c",
  "files": {
   "js/runtime.js": "278a8aece5a7e153",
   "js/config.js": "fbb1a18d8b7d15d7",
@@ -44,7 +44,7 @@ window.MLNG_BUILD = {
   "js/mod_report.js": "c0de706237aa073b",
   "js/mod_assume.js": "4100619fabecf235",
   "js/mod_spc.js": "ae3fef41dffa8ad4",
-  "js/mod_ai.js": "418b56b44f06dad8",
+  "js/mod_ai.js": "ab874f667c20d52b",
   "js/mod_flow.js": "acc7cbe6ef459d95",
   "js/boot.js": "ff48c44de6b1a781",
   "css/style.css": "615346ca18e7f396"

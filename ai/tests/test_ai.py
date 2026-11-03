@@ -128,3 +128,18 @@ def test_diagnose_without_outcome():
     from mlng_ai.diagnose import diagnose
     res = diagnose(pd.DataFrame({'온도': range(50), '압력': range(50)}))
     assert res['outcome'] == '' and res['readiness']['score'] < 50 and res['next']
+
+
+def test_eight_d_report():
+    """8D 초안: 1순위 원인이 D4 에 들어가고, D5 대책은 불량률이 가장 낮은 구간을 목표로 한다"""
+    import numpy as np
+    import pandas as pd
+    from mlng_ai.diagnose import diagnose, render_html
+    r = np.random.default_rng(5)
+    t = r.normal(850, 10, 1200)
+    df = pd.DataFrame({'소입 온도': t, '판정': np.where(r.random(1200) < 0.02 + 0.2 * (t > 860), '불합격', '합격')})
+    res = diagnose(df, unit_cost=5000)
+    d = res['report_8d']
+    assert d['d4'][0]['column'] == '소입 온도' and d['d5'][0]['target'] != d['d4'][0]['worst']
+    assert d['goal_rate'] < res['defect_rate']
+    assert '원인 분석 보고서 초안 (8D)' in render_html(res)
