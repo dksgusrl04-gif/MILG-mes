@@ -22,21 +22,173 @@ import numpy as np
 import pandas as pd
 
 from .datasets import Table
-from .lexicon import QUANTITY
+import re
+
+from .lexicon import ALARM_WORDS, QUANTITY
 from .schema import ColumnSense, leakage_guard, sense_table
 
 QS = list(QUANTITY) + ['unknown']
-BASE_SLOTS = [f'q:{q}' for q in QS] + ['spread', 'spec', 'event', 'all_max', 'n_out', 'cat_rare', 'load', 'missing']
-UP_SLOTS = ['up:all_max', 'up:n_out', 'up:spec', 'up:spread', 'up:event', 'up:q:temperature', 'up:q:pressure', 'up:q:current', 'up:q:wear', 'up:q:vibration', 'up:q:time']
+ACC_SLOTS = ['acc:native', 'acc:count', 'acc:exposure', 'acc:dose', 'acc:drift', 'acc:spec_dose']
+WAVE_SLOTS = ['wave:dose', 'wave:trend', 'wave:rough']
+TEXT_SLOTS = ['text:risk', 'text:alarm']
+BASE_SLOTS = [f'q:{q}' for q in QS] + ['spread', 'spec', 'event', 'all_max', 'n_out', 'cat_rare', 'load', 'missing'] + ACC_SLOTS + WAVE_SLOTS + TEXT_SLOTS
+UP_SLOTS = ['up:all_max', 'up:n_out', 'up:spec', 'up:spread', 'up:event', 'up:q:temperature', 'up:q:pressure', 'up:q:current', 'up:q:wear', 'up:q:vibration', 'up:q:time',
+            'up:acc:dose', 'up:wave:dose', 'up:text:risk']
+GROUPS = {'적산': ACC_SLOTS, '파형': WAVE_SLOTS, '텍스트': TEXT_SLOTS}
 SLOTS = BASE_SLOTS + UP_SLOTS + ['up:has']
 SLOT_KO = {'spread': '변동(산포) 증가', 'spec': '규격 대비 이탈', 'event': '교체 · 급변 사건', 'all_max': '가장 크게 벗어난 조건', 'n_out': '벗어난 조건 수',
-           'cat_rare': '드문 작업자 · 자재 · 설비', 'load': '수량(장입량) 과다', 'missing': '빈 값', 'up:has': '앞 공정 연결 있음'}
+           'cat_rare': '드문 작업자 · 자재 · 설비', 'load': '수량(장입량) 과다', 'missing': '빈 값', 'up:has': '앞 공정 연결 있음',
+           'acc:native': '적산 값 (사용 시간 · 마모)', 'acc:count': '교체 뒤 누적 횟수', 'acc:exposure': '교체 뒤 누적 생산량', 'acc:dose': '누적 이탈량 (작은 이탈이 쌓임)', 'acc:drift': '지속 치우침 (한쪽으로 계속)',
+           'acc:spec_dose': '규격 이탈 누적', 'wave:dose': '파형 · 규격 밖 체류 (이탈 적분)', 'wave:trend': '파형 · 작업 중 기울기', 'wave:rough': '파형 · 요동',
+           'text:risk': '메모 · 알람 문장 위험도 (학습)', 'text:alarm': '메모 속 이상 징후 단어'}
 for q, (ko, _) in QUANTITY.items():
     SLOT_KO[f'q:{q}'] = f'{ko} 이탈'
 SLOT_KO['q:unknown'] = '이름 없는 센서 이탈'
 for s in UP_SLOTS:
     SLOT_KO[s] = '앞 공정 · ' + SLOT_KO[s[3:]]
 MIN_HIST = 20         # 이보다 적게 쌓이면 «평소» 를 모른다 → 0 (표준편차 추정이 흔들리지 않을 만큼)
+RESET_WORDS = ['교체', '교환', 'changeover', 'change', '정비', 'maintenance', 'reset', 'dress', '드레싱', '점검', 'replace']
+
+
+# ── 적산: 교체 · 정비(리셋) 이후 계속 더해지는 양
+def find_entity(df: pd.DataFrame, S: dict, given: str = '') -> str:
+    """적산을 묶을 단위 — 공구 · 금형 · 설비처럼 «한동안 같은 값이 이어지다 바뀌는» 범주 · 식별자 칼럼"""
+    if given and given in df:
+        return given
+    best, score = '', 1.0
+    for c, s in S.items():
+        if s.role not in ('id', 'category'):
+            continue
+        v = df[c].astype(str).to_numpy()
+        k = len(set(v))
+        if 2 <= k <= max(2, len(v) // 5):
+            ch = float(np.mean(v[1:] != v[:-1])) if len(v) > 1 else 1.0
+            if ch < min(score, 0.15):
+                best, score = c, ch
+    return best
+
+
+def accumulate(df, S, t, n, X):
+    N = len(df)
+    reset = np.zeros(N, bool); reset[0] = True
+    why = []
+    ent = find_entity(df, S, t.entity)
+    if ent:
+        v = df[ent].astype(str).to_numpy(); reset[1:] |= v[1:] != v[:-1]; why.append(ent)
+    for c, sv in S.items():
+        if sv.role == 'param' and sv.stat == 'event' and any(w in (c + ' ' + sv.label).lower() for w in RESET_WORDS):
+            reset |= pd.to_numeric(df[c], errors='coerce').fillna(0).to_numpy() > 0; why.append(c)
+    nat = [c for c, sv in S.items() if sv.role == 'param' and sv.stat == 'accum']
+    for c in nat:                                         # 적산 값이 크게 떨어진 곳 = 교체
+        x = pd.to_numeric(df[c], errors='coerce').to_numpy(float)
+        rng = np.nanmax(x) - np.nanmin(x) if np.isfinite(x).any() else 0
+        if rng > 0:
+            reset[1:] |= np.nan_to_num(np.diff(x)) < -0.4 * rng
+    has_reset = reset[1:].any()
+    cnt = np.zeros(N); expo = np.zeros(N); dose = np.zeros(N); sdose = np.zeros(N)
+    # 누적 이탈량: 칼럼마다 CUSUM (평소보다 0.5σ 넘게 벗어난 만큼만 쌓임) → 가장 많이 쌓인 칼럼
+    params = [c for c, sv in S.items() if sv.role == 'param' and sv.stat in ('level', 'spread')]
+    ZS = [expanding_z(pd.to_numeric(df[c], errors='coerce').to_numpy(float)) for c in params] or [np.zeros(N)]
+    ZC = [np.abs(z) for z in ZS]
+    cs = np.zeros(len(ZC))
+    ew = np.zeros(len(ZS)); drift = np.zeros(N); drift_who = np.zeros(N, int)
+    dose_who = np.zeros(N, int)
+    spv = X['spec'].to_numpy(float)
+    c = e = d = sd = 0.0
+    for i in range(N):
+        if reset[i]:
+            c = e = d = sd = 0.0
+        if reset[i]:
+            cs[:] = 0.0
+        c += 1; e += n[i]
+        for j, z in enumerate(ZC):
+            cs[j] = max(0.0, cs[j] + z[i] - 0.8)              # |z| 평균은 약 0.8 — 그보다 큰 만큼만 쌓인다
+        d = float(cs.max()); dose_who[i] = int(cs.argmax())
+        for j, z in enumerate(ZS):                           # 지속 치우침: 부호 있는 z 의 지수 평균 (λ 0.1 ≈ 최근 10회)
+            ew[j] = 0.9 * ew[j] + 0.1 * z[i]
+        drift[i] = float(np.abs(ew).max()) * np.sqrt(19); drift_who[i] = int(np.abs(ew).argmax())   # √((2−λ)/λ) 로 σ 단위
+        sd = (sd if has_reset else 0.9 * sd) + max(spv[i] - 1.0, 0.0)   # 리셋 정보가 없으면 천천히 잊는 합
+        cnt[i], expo[i], dose[i], sdose[i] = c, e, min(d, 30), min(sd, 30)
+    X['acc:dose'], X['acc:spec_dose'], X['acc:drift'] = dose, sdose, drift
+    if params:
+        acc_who = (params, dose_who, drift_who)
+    else:
+        acc_who = None
+    if has_reset:
+        X['acc:count'] = cnt                                  # 교체 뒤 몇 번째인가 (뒤에서 공정 안 σ 로 맞춤)
+        if n.max() > 1:                                       # 수량이 행마다 다를 때만 (한 개 단위면 횟수와 같음)
+            X['acc:exposure'] = np.log1p(expo)
+    return nat, ent, int(reset.sum()), acc_who
+
+
+# ── 비정형 ① 파형: LOT 하나의 공정값 기록(온도 프로파일 · 타발 추이)을 모양 숫자로
+def wave_features(t, lots, X, who):
+    if not t.series:
+        return []
+    keys, D, T, R = [], [], [], []
+    for k, sr in t.series.items():
+        by, tol = sr['by_lot'], sr.get('tol')
+        d, tr, ro = np.zeros(len(lots)), np.zeros(len(lots)), np.zeros(len(lots))
+        for i, lot in enumerate(lots):
+            a = by.get(lot)
+            if not a or len(a) < 4:
+                continue
+            a = np.asarray(a, float); a = a[np.isfinite(a)]
+            if len(a) < 4:
+                continue
+            sp = sr['sp'].get(lot) if isinstance(sr.get('sp'), dict) else sr.get('sp')
+            sc = float(tol) if tol else (np.std(a) or 1.0)
+            center = float(sp) if sp is not None else float(np.median(a))
+            dev = np.abs(a - center) / sc
+            d[i] = float(np.mean(np.clip(dev - 1.0, 0, None)))                      # 허용폭 밖에 머문 양 (시간 평균 이탈 적분)
+            tr[i] = abs(float(np.polyfit(np.arange(len(a)), a, 1)[0])) * len(a) / sc  # 작업 처음 → 끝 기울기
+            ro[i] = float(np.mean(np.abs(np.diff(a)))) / sc                         # 요동
+        keys.append(k); D.append(d); T.append(tr); R.append(ro)
+    for slot, M in (('wave:dose', D), ('wave:trend', T), ('wave:rough', R)):
+        A = np.column_stack(M)
+        X[slot] = A.max(1); who[slot] = ([t.series[k]['label'] for k in keys], A.argmax(1))
+    return keys
+
+
+# ── 비정형 ② 문장: 작업 메모 · 알람 글
+TOK = re.compile(r'[0-9a-zA-Z가-힣]+')
+
+
+def grams(text: str) -> set:
+    t = str(text).lower()
+    w = TOK.findall(t)
+    out = set(w)
+    for x in w:                                            # 글자 3-그램 (한글 어미 · 띄어쓰기 달라도 잡음)
+        if len(x) >= 3:
+            out.update(x[j:j + 3] for j in range(len(x) - 2))
+    return out
+
+
+def text_features(df, S, y, n, X, who):
+    cols = [c for c, sv in S.items() if sv.role == 'text']
+    if not cols:
+        return []
+    N = len(df)
+    risk, alarm = np.zeros(N), np.zeros(N)
+    rate = y / np.maximum(n, 1)
+    pos, neg = {}, {}
+    P = Nn = 0
+    sy = sn = 0.0
+    for i in range(N):
+        txt = ' '.join(str(df[c].iat[i]) for c in cols if pd.notna(df[c].iat[i]))
+        g = grams(txt)
+        alarm[i] = sum(1 for w in ALARM_WORDS if w in txt.lower())
+        if P >= 3 and Nn >= 3 and g:                       # 그 행 이전까지 쌓인 글만으로 점수 (누적 · 미래 정보 없음)
+            s = sum(np.log((pos.get(x, 0) + 0.5) / (P + 1)) - np.log((neg.get(x, 0) + 0.5) / (Nn + 1)) for x in g)
+            risk[i] = s / np.sqrt(len(g))
+        ev = (y[i] > 0) if n.max() <= 1 else (rate[i] > (sy / sn if sn else 0))
+        book = pos if ev else neg
+        for x in g:
+            book[x] = book.get(x, 0) + 1
+        P += int(ev); Nn += int(not ev); sy += y[i]; sn += n[i]
+    X['text:risk'], X['text:alarm'] = np.clip(risk, -10, 10), alarm
+    who['text:risk'] = (cols, np.zeros(N, int)); who['text:alarm'] = (cols, np.zeros(N, int))
+    return cols
 
 
 def expanding_z(x: np.ndarray) -> np.ndarray:
@@ -74,6 +226,7 @@ class Encoded:
     lot: np.ndarray            # LOT 키 (앞 공정 연결)
     detail: dict = field(default_factory=dict)   # 행마다 슬롯을 만든 칼럼 (설명용)
     leak: list = field(default_factory=list)
+    info: dict = field(default_factory=dict)
 
 
 def outcome_vector(s: pd.Series, cs: ColumnSense) -> np.ndarray:
@@ -109,7 +262,7 @@ def encode(t: Table, overrides: dict | None = None, llm: bool = False) -> Encode
     X = pd.DataFrame(0.0, index=df.index, columns=BASE_SLOTS)
     who = {}
     for q in QS:
-        cs = [c for c in Z if S[c].quantity == q and S[c].stat == 'level']
+        cs = [c for c in Z if S[c].quantity == q and S[c].stat == 'level']     # 적산 값은 acc:native 로 따로
         if cs:
             A = np.abs(np.column_stack([Z[c] for c in cs]))
             X[f'q:{q}'] = A.max(1); who[f'q:{q}'] = (cs, A.argmax(1))
@@ -138,7 +291,19 @@ def encode(t: Table, overrides: dict | None = None, llm: bool = False) -> Encode
     if ex:
         X['load'] = np.clip(expanding_z(np.log(n)), 0, None)
     lot = df[t.lot_col].astype(str).to_numpy() if t.lot_col else np.array([''] * len(df))
-    return Encoded(t, S, X, y, n, lot, who, leak)
+    # 적산
+    nat, ent, nres, aw = accumulate(df, S, t, n, X)
+    if aw:
+        who['acc:dose'] = (aw[0], aw[1]); who['acc:drift'] = (aw[0], aw[2])
+    if nat:
+        A = np.abs(np.column_stack([expanding_z(pd.to_numeric(df[c], errors='coerce').to_numpy(float)) for c in nat]))
+        X['acc:native'] = A.max(1); who['acc:native'] = (nat, A.argmax(1))
+    # 비정형
+    waves = wave_features(t, lot, X, who)
+    texts = text_features(df, S, y, n, X, who)
+    enc = Encoded(t, S, X, y, n, lot, who, leak)
+    enc.info = {'entity': ent, 'resets': nres, 'accum_cols': nat, 'waves': waves, 'texts': texts}
+    return enc
 
 
 def add_upstream(encs: dict[str, Encoded]) -> None:

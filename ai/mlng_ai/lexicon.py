@@ -41,6 +41,14 @@ ROLE_WORDS = {
 SETPOINT = ['sp', 'setpoint', 'set point', 'target value', '설정값', '설정', '목표값']
 # 통계 종류: 평균(level) · 변동(spread) — 변동이 커지는 것은 공정이 달라도 «불안정» 이라는 같은 신호
 SPREAD = ['std', 'sd', 'stdev', 'variance', 'var', 'range', 'iqr', '변동', '표준편차', '산포', '편차']
+# 적산(누적) 값: 교체 · 정비 뒤 0 에서 시작해 계속 더해지는 값 (사용 시간 · 타발 수 · 가공 수 …)
+ACCUM = ['누적', '적산', 'total', 'cumulative', 'cum', 'since', 'usage', 'used', 'life', 'tool wear', '사용 시간', '사용량', '수명', '총']
+# 글(비정형) 칼럼 이름
+TEXT_WORDS = ['memo', 'comment', 'note', 'notes', 'remark', 'remarks', 'description', 'message', 'log', 'text', '메모', '비고', '내용', '설명', '특이사항', '기록', '사유', '문구']
+# 작업 메모 · 알람 문장에서 이상 징후를 뜻하는 말 (사전 지식 — 학습 전에도 쓰는 «경험 규칙»)
+ALARM_WORDS = ['이상', '소음', '진동', '떨림', '누설', '누유', '과열', '발열', '파손', '깨짐', '크랙', '균열', '막힘', '걸림', '마모', '편마모', '찍힘', '버',
+               '변형', '휨', '들뜸', '불량', '재작업', '교체', '긴급', '정지', '알람', '경보', '튐', '스파크', '냄새', '연기',
+               'noise', 'vibration', 'chatter', 'leak', 'overheat', 'crack', 'broken', 'jam', 'stuck', 'worn', 'burr', 'defect', 'alarm', 'smoke', 'spark']
 # 결과 칼럼 중 «합격 · 양품» 처럼 1 이 좋은 쪽인 이름 (부호를 뒤집는다)
 GOOD_POLARITY = ['ok', 'pass', 'good', 'noband', 'no band', '합격', '양품', 'normal']
 # 결과의 «세부 유형» (TWF · HDF 같은 고장 모드) — 결과와 같은 사건을 다르게 적은 것이라 입력으로 쓰면 누설

@@ -43,6 +43,8 @@ class Table:
     parents: dict = field(default_factory=dict)     # {LOT: [앞 공정 LOT …]}
     unit_kind: str = 'lot'       # lot(수량 있는 LOT) · row(한 행 = 한 개)
     source: str = ''
+    series: dict = field(default_factory=dict)      # 비정형 파형: {이름: {'label', 'unit', 'by_lot': {LOT: [값…]}, 'sp', 'tol'}}  (sp 가 dict 면 LOT 별 설정값)
+    entity: str = ''             # 적산을 묶는 단위 (공구 · 금형 · 설비 칼럼) — 바뀌면 적산을 0 부터
 
 
 # ── 공개 데이터 받기
@@ -101,7 +103,14 @@ def mlng_tables(d: dict | None = None) -> list[Table]:
     meta.update({'qty': {'label': '투입 수량'}, 'bad_count': {'label': '불량 수량'}, 'worker': {'label': '작업자'}, 'mat_lot': {'label': '원자재 LOT'},
                  'lot_id': {'label': '열처리 LOT 번호'}, 'start_time': {'label': '작업 시작 시각'}})
     df = pd.DataFrame(rows).sort_values('start_time').reset_index(drop=True)
-    out.append(Table('heat', '염욕 열처리', df, meta, spec, 'lot_id', {k: v for k, v in par.items() if k.startswith('HT')}, 'lot', H.get('source', '')))
+    prof = H.get('profiles') or {}
+    ser = {}
+    for k, rc in rec.items():
+        by = {lot: p['s'][k] for lot, p in prof.items() if k in (p.get('s') or {})}
+        if by:
+            sp, tol = (rc.get('sp'), rc.get('tol')) if rc.get('tol') else (((rc['lo'] + rc['hi']) / 2, (rc['hi'] - rc['lo']) / 2) if rc.get('lo') is not None else (None, None))
+            ser[k] = {'label': rc['label'] + ' 온도 기록' if rc.get('unit') == '°C' else rc['label'] + ' 기록', 'unit': rc.get('unit', ''), 'by_lot': by, 'sp': sp, 'tol': tol, 'step_min': 2}
+    out.append(Table('heat', '염욕 열처리', df, meta, spec, 'lot_id', {k: v for k, v in par.items() if k.startswith('HT')}, 'lot', H.get('source', ''), ser))
 
     # 프레스 LOT (LOT 마다 설정값이 다를 수 있어 설정값을 칼럼으로)
     P = d['press']
@@ -120,7 +129,14 @@ def mlng_tables(d: dict | None = None) -> list[Table]:
     meta.update({'qty': {'label': '생산 수량'}, 'bad_count': {'label': '불량 수량'}, 'strokes': {'label': '타발 횟수'}, 'changeover': {'label': '금형 교체 여부'},
                  'lot_id': {'label': '프레스 LOT 번호'}, 'work_date': {'label': '작업 날짜'}})
     df = pd.DataFrame(rows).sort_values('work_date').reset_index(drop=True)
-    out.append(Table('press', '프레스 성형', df, meta, spec, 'lot_id', {k: v for k, v in par.items() if k.startswith('PR')}, 'lot', P.get('source', '')))
+    ser = {}
+    for k, rc in prec.items():
+        by = {l['id']: (P.get('series') or {}).get(l['id'], {}).get(k) for l in P['lots']}
+        by = {a: b for a, b in by.items() if b}
+        if by:
+            ser[k] = {'label': rc['label'] + ' 타발 추이', 'unit': rc.get('unit', ''), 'by_lot': by,
+                      'sp': {l['id']: (l.get('stats') or {}).get(k, {}).get('sp', rc.get('sp')) for l in P['lots']}, 'tol': rc['tol']}
+    out.append(Table('press', '프레스 성형', df, meta, spec, 'lot_id', {k: v for k, v in par.items() if k.startswith('PR')}, 'lot', P.get('source', ''), ser))
 
     # 점용접 LOT
     W = d['weld']
@@ -148,7 +164,7 @@ def mlng_tables(d: dict | None = None) -> list[Table]:
     for k, s in sig.items():
         meta[k] = {'label': s.get('label', k), 'unit': s.get('unit', '')}
     df = pd.DataFrame(rows).sort_values('run_time').reset_index(drop=True)
-    out.append(Table('mach', 'MCT 가공', df, meta, {}, 'lot', {k: v for k, v in par.items() if k.startswith('MC')}, 'row', M.get('source', '')))
+    out.append(Table('mach', 'MCT 가공', df, meta, {}, 'lot', {k: v for k, v in par.items() if k.startswith('MC')}, 'row', M.get('source', ''), entity='tool_id'))
 
     # 정밀가공 검사 (부품 하나 = 한 행)
     I = d['insp']
@@ -193,8 +209,8 @@ def public_tables() -> list[Table]:
         X = pd.read_csv(PUB / 'secom.data', sep=r'\s+', header=None)
         X.columns = [f'f{i:03d}' for i in range(X.shape[1])]
         lab = [ln.split(' ', 1) for ln in (PUB / 'secom_labels.data').read_text().splitlines() if ln.strip()]
-        X['label'] = [int(a) for a, _ in lab]
-        X['timestamp'] = pd.to_datetime([t.strip().strip('"') for _, t in lab], format='%d/%m/%Y %H:%M:%S').astype(str)
+        X = pd.concat([X, pd.DataFrame({'label': [int(a) for a, _ in lab],
+                                        'timestamp': pd.to_datetime([t.strip().strip('"') for _, t in lab], format='%d/%m/%Y %H:%M:%S').astype(str)})], axis=1)
         X = X.sort_values('timestamp').reset_index(drop=True)
         out.append(Table('secom', '반도체 공정 (SECOM, 칼럼 이름 없음)', X, {'label': {'label': '1 = fail'}}, {}, '', {}, 'row', 'UCI SECOM (CC BY 4.0)'))
     return out

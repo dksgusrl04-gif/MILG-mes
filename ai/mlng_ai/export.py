@@ -14,9 +14,10 @@ import numpy as np
 
 from . import __version__
 from .datasets import ROOT
-from .engine import build, cold_start, injection, prequential
+from .engine import build, channel_tests, cold_start, compare, injection, prequential
 from .features import SLOT_KO, SLOTS
 from .holdout import evaluate as holdout_eval
+from .lexicon import ALARM_WORDS
 from .truth import score, truth
 
 STATE = ROOT / 'ai' / 'state' / 'model.json'
@@ -75,7 +76,7 @@ def explain_rows(M, E, k, w):
             if s in e.detail and not s.startswith('up:'):
                 cols, am = e.detail[s]
                 c = cols[int(am[i])]
-                src = (e.senses[c].label or c)
+                src = (e.senses[c].label or c) if c in e.senses else c       # 파형은 이름(설명) 그대로
             elif s.startswith('up:'):
                 src = ' · '.join(pname.get(x, x) for x in e.detail.get('_up', {}).get(i, []))
             con.append({'slot': s, 'x': r['x'], 'c': r['contrib'], 'lo': r['lo'], 'hi': r['hi'], 'src': src})
@@ -92,6 +93,8 @@ def run(fast: bool = False, write: bool = True) -> dict:
     M, pre, drift, _ = prequential(E)
     cs = {} if fast else {k: cold_start(E, k) for k in COLD if k in E}
     inj = [] if fast else injection()
+    chan = [] if fast else channel_tests()
+    abl = {} if fast else {g: compare(build, [g]) for g in ('적산', '파형')}
     hold = holdout_eval()
     sch, in_acc, in_n = schema_block(E)
     shared = sorted(M.shared_effects(), key=lambda r: -abs(r['beta']))
@@ -104,7 +107,9 @@ def run(fast: bool = False, write: bool = True) -> dict:
         'version': __version__, 'model_version': M.version, 'built': dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
         'slots': SLOTS, 'slot_ko': SLOT_KO,
         'sources': [{'key': k, 'name': e.table.process, 'rows': len(e.y), 'events': float(e.y.sum()), 'exposure': float(e.n.sum()), 'unit': e.table.unit_kind,
-                     'source': e.table.source, 'linked': int(e.X['up:has'].sum())} for k, e in E.items()],
+                     'source': e.table.source, 'linked': int(e.X['up:has'].sum()), 'entity': e.info.get('entity', ''), 'resets': e.info.get('resets', 0),
+                     'accum_cols': e.info.get('accum_cols', []), 'waves': [e.table.series[w]['label'] for w in e.info.get('waves', [])], 'texts': e.info.get('texts', [])} for k, e in E.items()],
+        'channels': chan, 'ablation': abl, 'alarm_words': ALARM_WORDS,
         'schema': sch, 'schema_eval': {'in_sample': in_acc, 'in_sample_n': in_n, 'holdout_n': hold['n'], 'holdout': hold['accuracy'],
                                         'holdout_wrong': [r for r in hold['rows'] if not r['ok']]},
         'prequential': pre, 'drift': drift[:60], 'drift_n': len(drift), 'history': M.history,
@@ -153,11 +158,37 @@ def report_md(a: dict) -> str:
             L.append(f"| ×{r['effect']} | {r['detected']:.0%} | {r['median_rank']:.0f} |")
         L.append('')
         L.append('×1.0 (효과 없음) 에서 찾아낸 비율 = 없는 원인을 만들어 낸 비율 (거짓 경보).')
-    L += ['', '## 6. 모든 공정에 통하는 공통 효과 (90% 구간이 1 을 벗어난 것)', '', '| 슬롯 | 배수 (평소보다 1σ) | 90% 구간 |', '|---|---:|---|']
+    if a.get('channels') or a.get('ablation'):
+        L += ['', '## 6. 적산 · 비정형 (파형 · 문장)', '', '**무엇을 쓰나**', '']
+        for s in a['sources']:
+            bits = []
+            if s.get('entity') or s.get('resets', 0) > 1:
+                bits.append(f"적산 단위 «{s.get('entity') or '—'}» · 리셋 {s.get('resets', 0)}회")
+            if s.get('accum_cols'):
+                bits.append('적산 칼럼 ' + ', '.join(s['accum_cols']))
+            if s.get('waves'):
+                bits.append(f"파형 {len(s['waves'])}종")
+            if s.get('texts'):
+                bits.append('문장 ' + ', '.join(s['texts']))
+            if bits:
+                L.append(f"- {s['name']}: " + ' · '.join(bits))
+        if a.get('channels'):
+            L += ['', '**정답을 심은 가상 데이터** — 신호를 심었을 때 찾는가 · 그 묶음을 빼면 나빠지는가 · 신호가 없을 때 오경보가 없는가', '',
+                  '| 묶음 | 슬롯 | 심은 신호 | 찾아낸 비율 | AUC (포함) | AUC (뺌) |', '|---|---|---:|---:|---:|---:|']
+            for r in a['channels']:
+                L.append(f"| {r['group']} | {a['slot_ko'].get(r['slot'], r['slot'])} | {'없음' if not r['signal'] or r['signal'] == 1.0 and r['group'] != '텍스트' else r['signal']} | {r['detected']:.0%} | {r['auc_with']:.2f} | {r['auc_without']:.2f} |")
+        for g, rs in (a.get('ablation') or {}).items():
+            L += ['', f'**실제 데이터 제거 실험 — {g}** (모델 이탈도 개선: 포함 → 뺌)', '', '| 공정 | 포함 | 뺌 | 순위 지표 포함 → 뺌 |', '|---|---:|---:|---|']
+            for k, r in rs.items():
+                L.append(f"| {a['procs'][k]['name']} | {r['with']:+.1%} | {r['without']:+.1%} | {r['rank_with']:.2f} → {r['rank_without']:.2f} |")
+    L += ['', '## 7. 모든 공정에 통하는 공통 효과 (90% 구간이 1 을 벗어난 것)', '', '| 슬롯 | 배수 (평소보다 1σ) | 90% 구간 |', '|---|---:|---|']
     for r in a['shared']:
         if r['lo'] > 1 or r['hi'] < 1:
             L.append(f"| {a['slot_ko'].get(r['slot'], r['slot'])} | ×{r['rr']:.2f} | {r['lo']:.2f} ~ {r['hi']:.2f} |")
     L += ['', '## 한계', '', '- MLNG 데모 공장의 공정 연결(LOT 추적)은 서로 다른 공개 데이터셋을 한 흐름으로 이은 것이라, 실제 공정 간 인과는 들어 있지 않다. 공정 간 원인 추적은 5장의 가상 데이터로 검증했다.',
           '- 열처리처럼 조건 기록으로 불량이 설명되지 않는 공정은 게이트가 0 쪽으로 가서 «공정 기준율» 예측으로 물러난다 (모델이 기준보다 나쁘게 예측하지 않도록).',
-          '- 칼럼 해석의 학습 데이터 정확도는 사전을 만들면서 본 칼럼이라 높게 나온다. 실제 성능은 «처음 보는 칼럼» 수치로 본다.']
+          '- 칼럼 해석의 학습 데이터 정확도는 사전을 만들면서 본 칼럼이라 높게 나온다. 실제 성능은 «처음 보는 칼럼» 수치로 본다.',
+          '- 학습 데이터에는 작업 메모 같은 실제 문장이 없어 문장 학습은 가상 데이터로만 검증했다. 실제 메모 · 정비 기록이 쌓이면 같은 방식으로 학습된다 (서버 /ai/v1/update).',
+          '- 파형(열처리 온도 기록 · 프레스 타발 추이) 특징은 이 데이터에서는 예측을 개선하지 못했다 — 불량이 이 공정값 기록으로 설명되지 않는다는 뜻으로 본다.',
+          '- MCT 가공은 불량이 2건뿐이라 공정별 수치는 의미가 없다.']
     return '\n'.join(L) + '\n'

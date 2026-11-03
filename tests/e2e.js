@@ -118,6 +118,8 @@ const ok = (c, m) => { if (c) pass++; else fails.push(m); console.log(`${c ? '�
   ok(await ev(() => document.querySelectorAll('#view .xtab tbody tr').length >= 10), '칼럼 의미 해석 표');
   for (const t of ['learn', 'cold', 'trace']) { await p.click(`[data-xa="tab|${t}"]`); await W(300); ok(await ev(() => document.querySelector('#view').innerText.length > 300), `공정 통합 AI — ${t}`); }
   ok(await ev(() => document.querySelectorAll('#view .xc').length >= 2), '원인 추적 — 불량 기여');
+  await p.click('[data-xa="tab|raw"]'); await W(300); ok(await ev(() => /적산/.test(document.querySelector('#view').innerText) && !!document.querySelector('#xa-memo')), '적산 · 비정형 화면');
+  await p.fill('#xa-memo', '주축 소음 있고 진동 느낌'); await W(300); ok(await ev(() => document.querySelectorAll('.xmemo-out mark').length >= 2), '메모 이상 징후 단어 표시');
 
   // 끝: 모든 동작 뒤에도 원장이 온전한가
   await go('net_ledger'); await W(); await p.click('#lg-verify'); await W(1000); ok(/모두 사슬과 서명이 맞습니다/.test(await note()), '모든 시나리오 뒤 원장 검증');

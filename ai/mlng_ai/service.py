@@ -79,8 +79,9 @@ class Service:
             if process in self.M.procs and self.M.seen.get(process, 0) > 0:
                 mu, w = self.M.predict(process, X, n)[0], self.M.gate_weight(process)
                 mg = w * mu + (1 - w) * self.M.base_rate(process) * n
-                d0 = poisson_dev(y, self.M.base_rate(process) * n)
-                out.update({'scored': True, 'gate': w, 'dev_skill': float(1 - poisson_dev(y, mg) / d0) if d0 > 0 else None,
+                bi = bool(self.M.binary.get(process))
+                d0 = poisson_dev(y, self.M.base_rate(process) * n, bi)
+                out.update({'scored': True, 'gate': w, 'dev_skill': float(1 - poisson_dev(y, mg, bi) / d0) if d0 > 0 else None,
                             'pred': [float(v) for v in mg[:200]]})
             else:
                 self.M.add_process(process, (y.sum() + 0.5) / (n.sum() + 1))

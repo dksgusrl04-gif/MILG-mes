@@ -51,7 +51,7 @@ def test_cumulative_update_and_roundtrip():
     for ix in np.array_split(np.arange(400), 8):
         M.update([('p', X[ix], y[ix], np.ones(len(ix)))])
     eff = M.process_effects('p')['effects'][0]
-    assert eff['lo'] > 1.5                              # 심은 효과 exp(0.8)=2.2 를 찾음
+    assert eff['lo'] > 1.2                              # 심은 효과 exp(0.8)=2.2 를 찾음 (90% 하한)
     M2 = CumulativeModel.from_dict(M.to_dict())
     assert np.allclose(M2.predict('p', X[:5], np.ones(5))[0], M.predict('p', X[:5], np.ones(5))[0])
 
@@ -77,3 +77,28 @@ def test_public_prequential_beats_baseline():
     E = build(mlng_tables() + public_tables())
     _, res, _, _ = prequential(E, keys=['ai4i', 'insp'])
     assert res['ai4i']['gated_skill'] > 0.1 and res['ai4i']['auc'] > 0.75
+
+
+def test_accum_and_text_detection():
+    from mlng_ai.engine import synthetic_accum, synthetic_text
+    E = build(synthetic_accum(2.0, 0))
+    e = E['synAcc']
+    assert e.info['entity'] == 'tool_no' and e.info['resets'] > 10 and (e.X['acc:count'] > 0).all()
+    E = build(synthetic_text(1.0, 0))
+    e = E['synText']
+    assert e.senses['operator_memo'].role == 'text' and e.info['texts'] == ['operator_memo']
+    assert (e.X['text:alarm'] > 0).any() and e.X['text:risk'].abs().sum() > 0
+
+
+def test_accum_column_shape():
+    x = pd.Series(np.concatenate([np.arange(0, 100, 2.0), np.arange(0, 80, 2.0), np.arange(0, 120, 2.0)]))
+    assert sense('spindle_hours', x).stat == 'accum'          # 톱니 모양 → 적산
+
+
+def test_text_channel_finds_memo_signal_without_false_alarm():
+    from mlng_ai.engine import prequential, synthetic_text
+    for sig, want in ((1.0, True), (0.0, False)):
+        E = build(synthetic_text(sig, 1))
+        M, _, _, _ = prequential(E, n_batches=10, drift_on=False)
+        eff = {r['slot']: r for r in M.process_effects('synText')['effects']}['text:risk']
+        assert (eff['lo'] > 1.0) == want

@@ -3,12 +3,12 @@ name: MLNG MES 시험
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: '22' }
+      - uses: actions/setup-python@v6
         with: { python-version: '3.11' }
       - run: npm install --no-audit --no-fund
       - run: python tools/stamp_version.py --check
@@ -21,12 +21,12 @@ jobs:
 
   # 자체 서버(server/): API 단위 시험 → 실제 컨테이너 3개(DB · API · Nginx)를 띄워 요청 시험
   server:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: '22' }
+      - uses: actions/setup-python@v6
         with: { python-version: '3.12' }
       - run: node server/scripts/export_ask_spec.mjs --check
       - run: pip install -r server/api/requirements.txt pytest
@@ -43,10 +43,10 @@ jobs:
 
   # 공정 통합 AI (ai/): 공개 데이터 받기 → 칼럼 해석 · 누적 학습 · 원인 추적 시험
   ai:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with: { python-version: '3.12' }
       - run: pip install -r ai/requirements.txt
       - run: cd ai && python -m mlng_ai fetch

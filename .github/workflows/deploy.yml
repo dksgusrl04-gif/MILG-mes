@@ -18,7 +18,7 @@ concurrency: { group: deploy-server, cancel-in-progress: false }
 jobs:
   deploy:
     if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     steps:
       - name: SSH 준비

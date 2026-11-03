@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass, field
 import numpy as np
 import pandas as pd
 
-from .lexicon import GOOD_POLARITY, OUTCOME_DETAIL, QUANTITY, ROLE_WORDS, SETPOINT, SPREAD, UNIT
+from .lexicon import ACCUM, GOOD_POLARITY, TEXT_WORDS, OUTCOME_DETAIL, QUANTITY, ROLE_WORDS, SETPOINT, SPREAD, UNIT
 
 DIM = 512
 
@@ -104,8 +104,15 @@ def profile(values: pd.Series) -> dict:
         p.update({'binary': bool(set(np.unique(x)) <= {0.0, 1.0} or len(np.unique(x)) == 2), 'zero_one': bool(set(np.unique(x)) <= {0.0, 1.0}),
                   'integer': bool(np.all(np.abs(x - np.round(x)) < 1e-9)), 'min': float(x.min()), 'max': float(x.max()),
                   'monotonic': bool(n > 5 and (np.all(np.diff(x) >= 0))), 'nonneg': bool(x.min() >= 0)})
+        dx = np.diff(x)
+        rng = x.max() - x.min()
+        # 톱니 모양: 대부분 늘어나다가 가끔 크게 떨어짐 (교체 · 정비로 0 이 됨) → 적산 값
+        p['sawtooth'] = bool(n > 30 and rng > 0 and (dx >= 0).mean() > 0.8 and (dx < -0.4 * rng).sum() >= 1 and (dx > 0).mean() > 0.3)
     else:
-        p.update({'binary': p['nunique'] == 2, 'integer': False, 'monotonic': False})
+        lens = s.astype(str).str.len()
+        p.update({'binary': p['nunique'] == 2, 'integer': False, 'monotonic': False,
+                  'text': bool(n and lens.mean() >= 8 and s.astype(str).str.contains(r'\s').mean() > 0.5 and p['unique_ratio'] > 0.2),
+                  'spacey': bool(n and s.astype(str).str.contains(r'\s').mean() > 0.3)})
         p['datetime'] = bool(n and pd.to_datetime(s.astype(str).head(50), errors='coerce', format='mixed').notna().mean() > 0.9)
     return p
 
@@ -134,6 +141,8 @@ def sense(name: str, values: pd.Series, label: str = '', unit: str = '') -> Colu
         role, conf = 'time', 0.9; why.append('시각 이름 + 날짜 · 단조 증가')
     elif hit['id'] >= 2 and (p['unique_ratio'] > 0.9 or not p['numeric']):
         role, conf = 'id', 0.85; why.append('식별자 이름 + 값이 거의 모두 다름')
+    elif not p['numeric'] and not p.get('datetime') and (p.get('text') or (_kw_hit(words, text, TEXT_WORDS) >= 2 and p.get('spacey'))):
+        role, conf = 'text', 0.85; why.append('띄어쓰기가 있는 문장 — 작업 메모 · 알람 같은 비정형 글')
     elif not p['numeric'] and p['unique_ratio'] > 0.9 and p['n'] > 20:
         role, conf = 'id', 0.7; why.append('글자 값이 거의 모두 다름')
     elif hit['id'] >= 2 and p['numeric'] and p.get('integer') and p['nunique'] > 12 and hit['outcome'] < 2:
@@ -163,6 +172,9 @@ def sense(name: str, values: pd.Series, label: str = '', unit: str = '') -> Colu
     cs.stat = 'spread' if _kw_hit(words, text, SPREAD) >= 2 else 'level'
     if cs.stat == 'spread':
         why.append('변동(산포) 값')
+    elif _kw_hit(words, text, ACCUM) >= 2 or p.get('sawtooth'):
+        cs.stat = 'accum'
+        why.append('적산 값 — ' + ('톱니 모양(늘다가 교체 때 0)' if p.get('sawtooth') else '누적 · 사용량 이름'))
     # 3) 물리량: 단위 + 사전 + 문자 임베딩 + 값 범위
     e = embed(' '.join([str(name), str(label)]))
     sc = {}
@@ -224,8 +236,9 @@ def leakage_guard(df: pd.DataFrame, senses: dict[str, ColumnSense], y: np.ndarra
     """결과와 거의 같은 정보를 가진 칼럼(예: 마모 측정값으로 정한 불량)을 찾아 입력에서 뺀다 — AUC 0.97 이상이면 누설 의심"""
     out = []
     pos = y > 0
-    if pos.sum() < 3 or (~pos).sum() < 3:
+    if pos.sum() < 2 or (~pos).sum() < 3:
         return out
+    th = 0.97 if pos.sum() >= 5 else 0.995              # 사건이 적으면 우연히 높게 나올 수 있어 더 엄격하게
     for c, s in senses.items():
         if s.role != 'param':
             continue
@@ -238,7 +251,7 @@ def leakage_guard(df: pd.DataFrame, senses: dict[str, ColumnSense], y: np.ndarra
         if n1 == 0 or n0 == 0:
             continue
         auc = (r[pos[ok]].sum() - n1 * (n1 + 1) / 2) / (n1 * n0)
-        if max(auc, 1 - auc) >= 0.97:
+        if max(auc, 1 - auc) >= th:
             s.role, s.why = 'outcome_detail', s.why + [f'결과와 거의 같음 (AUC {max(auc, 1 - auc):.2f}) — 누설 의심으로 제외']
             out.append(c)
     return out

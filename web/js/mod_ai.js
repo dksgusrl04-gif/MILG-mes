@@ -16,7 +16,7 @@
     loading = fetch('data/ai_model.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : Promise.reject(new Error(r.status))).then(j => { A = j; M.render(); })
       .catch(e => { err = '모델 결과물을 읽지 못했습니다 (' + e.message + ') — ai/ 에서 python -m mlng_ai train'; M.render(); });
   };
-  const ROLE = { param: ['조건', 'j-ok'], category: ['범주', 'j-none'], outcome: ['결과', 'j-danger'], outcome_detail: ['결과 세부 · 제외', 'j-warn'], exposure: ['수량', 'j-none'],
+  const ROLE = { text: ['문장 (비정형)', 'j-ok'], param: ['조건', 'j-ok'], category: ['범주', 'j-none'], outcome: ['결과', 'j-danger'], outcome_detail: ['결과 세부 · 제외', 'j-warn'], exposure: ['수량', 'j-none'],
     id: ['식별자', 'j-none'], time: ['시각', 'j-none'], setpoint: ['설정값', 'j-none'], ignore: ['사용 안 함', 'j-none'] };
   const QKO = q => (A.slot_ko['q:' + q] || q).replace(' 이탈', '');
   const SK = s => A.slot_ko[s] || s;
@@ -45,7 +45,7 @@
         <tbody>${S.rows.map(r => { const [t, c] = ROLE[r.role] || [r.role, 'j-none']; return `<tr class="${r.ok === false ? 'hl' : ''}">
           <td class="mono">${esc(r.col)}</td><td class="muted">${esc(r.label || '')}${r.unit ? ` <small>[${esc(r.unit)}]</small>` : ''}</td>
           <td><span class="tag ${c}">${esc(t)}</span>${r.leak ? ' <span class="tag j-warn">누설</span>' : ''}</td>
-          <td>${r.role === 'param' ? esc(r.quantity === 'unknown' ? '알 수 없음' : r.quantity === 'event' ? '사건(0/1)' : QKO(r.quantity)) + (r.stat === 'spread' ? ' <small class="muted">변동</small>' : '') : '<span class="muted">—</span>'}</td>
+          <td>${r.role === 'param' ? esc(r.quantity === 'unknown' ? '알 수 없음' : r.quantity === 'event' ? '사건(0/1)' : QKO(r.quantity)) + (r.stat === 'spread' ? ' <small class="muted">변동</small>' : r.stat === 'accum' ? ' <small class="muted">적산</small>' : '') : '<span class="muted">—</span>'}</td>
           <td>${bar(r.conf, r.conf < 0.5 ? 'lo' : '')}</td><td class="muted wrap">${esc((r.why || []).join(' · '))}</td></tr>`; }).join('')}</tbody></table></div>
       ${k === 'secom' ? '<p class="note">칼럼 이름이 없는 공정 — 590개 센서 중 일부만 표시. 이름 대신 값 분포(평소 대비 이탈)로만 학습합니다.</p>' : ''}</div>
     <div class="card" style="margin-top:16px"><h2>처음 보는 칼럼 이름 시험 <span class="h2sub">사출 · 주조 · 도장 · 용접 · 가공 · 조립 · 반도체</span><span class="more"><span class="tag ${ev.holdout >= 0.85 ? 'j-ok' : 'j-warn'}">${pct(ev.holdout, 1)} · ${ev.holdout_n}개</span></span></h2>
@@ -93,6 +93,33 @@
     Object.entries(A.lots).forEach(([k, rs]) => rs.filter(r => r.y > 0).forEach(r => it.push(Object.assign({ k, kind: 'LOT' }, r))));
     return it.sort((a, b) => (b.k === 'insp') - (a.k === 'insp') || (b.p ?? 0) - (a.p ?? 0) || b.ratio - a.ratio);
   }
+  // ── 5. 적산 · 비정형 (파형 · 문장)
+  let memo = '가공 중 주축 소음 있고 떨림 느낌 — 칩 색 이상';
+  function vRaw() {
+    const ch = A.channels || [], ab = A.ablation || {}, W = A.alarm_words || [];
+    const hits = W.filter(w => memo.toLowerCase().includes(w));
+    const mark = esc(memo).replace(new RegExp('(' + hits.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'gi'), hits.length ? '<mark>$1</mark>' : '$1');
+    return `<div class="card" style="margin-top:16px"><h2>공정마다 쓰는 적산 · 비정형 정보</h2>
+      <div class="tbx"><table class="tb xtab"><colgroup><col class="c-p3"><col><col><col><col class="c-q"></colgroup>
+        <thead><tr><th>공정</th><th>적산 (리셋 단위 · 횟수)</th><th>적산 칼럼</th><th>파형</th><th>문장</th></tr></thead>
+        <tbody>${A.sources.map(x => `<tr><td><b>${esc(x.name.replace(/ \(.*\)/, ''))}</b></td><td>${x.entity || x.resets > 1 ? `${esc(x.entity || (x.accum_cols.length ? '적산 값이 0 으로' : '교체 사건'))} · ${f(x.resets, 0)}회` : '<span class="muted">—</span>'}</td>
+          <td>${x.accum_cols.length ? esc(x.accum_cols.join(', ')) : '<span class="muted">—</span>'}</td><td>${x.waves.length ? `${x.waves.length}종 <small class="muted">${esc(x.waves.slice(0, 2).join(', '))}${x.waves.length > 2 ? ' …' : ''}</small>` : '<span class="muted">—</span>'}</td>
+          <td>${x.texts.length ? esc(x.texts.join(', ')) : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table></div></div>
+    <div class="grid g2" style="margin-top:16px">
+      <div class="card"><h2>정답을 심은 가상 데이터 <span class="h2sub">찾는가 · 오경보 없는가</span></h2>
+        <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-n"><col class="c-gate"><col class="c-n"></colgroup><thead><tr><th>신호</th><th class="n">심음</th><th>찾아낸 비율</th><th class="n">AUC 포함 / 뺌</th></tr></thead>
+        <tbody>${ch.map(r => { const none = r.group === '텍스트' ? !r.signal : r.signal === 1; return `<tr><td>${esc(SK(r.slot))}</td><td class="n">${none ? '<span class="muted">없음</span>' : '있음'}</td>
+          <td>${bar(r.detected, none ? 'lo' : '')} <small>${pct(r.detected, 0)}</small></td><td class="n">${f(r.auc_with, 2)} / ${f(r.auc_without, 2)}</td></tr>`; }).join('')}</tbody></table></div>
+        <p class="note">«없음» 줄 = 신호가 없는 데이터에서 잘못 찾은 비율(오경보). AUC 0.5 = 무작위.</p></div>
+      <div class="card"><h2>문장 해석 미리보기 <span class="h2sub">이상 징후 단어</span></h2>
+        <textarea id="xa-memo" class="xmemo" rows="3">${esc(memo)}</textarea>
+        <div class="xmemo-out">${mark}</div>
+        <div class="muted" style="font-size:12.5px;margin-top:6px">징후 단어 ${hits.length}개${hits.length ? ' — ' + esc(hits.join(', ')) : ''} · 학습된 위험도는 과거 메모와 불량을 함께 쌓아 계산 (서버 /ai/v1/update)</div></div></div>
+    ${Object.entries(ab).map(([g, rs]) => `<div class="card" style="margin-top:16px"><h2>실제 데이터 제거 실험 — ${esc(g)} <span class="h2sub">이 묶음을 빼면</span></h2>
+      <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-n"><col class="c-n"><col class="c-rk"></colgroup><thead><tr><th>공정</th><th class="n">포함</th><th class="n">뺌</th><th class="n">순위 지표 포함 → 뺌</th></tr></thead>
+      <tbody>${Object.entries(rs).map(([k, r]) => `<tr><td>${esc(pname(k).replace(/ \(.*\)/, ''))}${few(k) ? ' <span class="tag j-none">데이터 부족</span>' : ''}</td><td class="n"><b class="${r.with - r.without > 0.02 ? 'okc' : ''}">${sgn(r.with)}</b></td><td class="n">${sgn(r.without)}</td><td class="n">${f(r.rank_with, 2)} → ${f(r.rank_without, 2)}</td></tr>`).join('')}</tbody></table></div></div>`).join('')}`;
+  }
+
   function vTrace() {
     const it = items(), cur = it.find(x => x.id === st.pick) || it[0];
     if (!cur) return '<div class="card"><div class="empty">설명할 LOT 이 없습니다</div></div>';
@@ -124,8 +151,8 @@
     load();
     if (err) return `<div class="card"><div class="empty">${esc(err)}</div></div>`;
     if (!A) return '<div class="card"><div class="empty">공정 통합 AI 결과를 불러오는 중…</div></div>';
-    const body = { schema: vSchema, learn: vLearn, cold: vCold, trace: vTrace }[st.tab] || vSchema;
-    return `${kpis()}<div class="spc-sub" style="margin-top:12px">${M.seg('xa', 'tab|' + st.tab, [['tab|schema', '칼럼 해석'], ['tab|learn', '누적 학습'], ['tab|cold', '처음 보는 공정'], ['tab|trace', '원인 추적']])}
+    const body = { schema: vSchema, learn: vLearn, cold: vCold, raw: vRaw, trace: vTrace }[st.tab] || vSchema;
+    return `${kpis()}<div class="spc-sub" style="margin-top:12px">${M.seg('xa', 'tab|' + st.tab, [['tab|schema', '칼럼 해석'], ['tab|learn', '누적 학습'], ['tab|cold', '처음 보는 공정'], ['tab|raw', '적산 · 비정형'], ['tab|trace', '원인 추적']])}
       <span class="muted" style="font-size:12px;margin-left:auto">${esc(A.version)} · ${esc(A.built)}</span></div>${body()}`;
   };
   M.aiModel = () => A;
@@ -133,6 +160,9 @@
     id: 'xai', group: '분석', order: 5.7,
     menu: [['xai', '공정 통합 AI', 'trend']],
     views: V,
-    bind(root) { root.querySelectorAll('[data-xa]').forEach(b => b.onclick = e => { e.preventDefault(); const s = b.dataset.xa, i = s.indexOf('|'); st[s.slice(0, i)] = s.slice(i + 1); M.render(); }); },
+    bind(root) {
+      const ta = root.querySelector('#xa-memo');
+      if (ta) ta.oninput = () => { memo = ta.value; const pos = ta.selectionStart; M.render(); const t2 = document.querySelector('#xa-memo'); if (t2) { t2.focus(); t2.setSelectionRange(pos, pos); } };
+      root.querySelectorAll('[data-xa]').forEach(b => b.onclick = e => { e.preventDefault(); const s = b.dataset.xa, i = s.indexOf('|'); st[s.slice(0, i)] = s.slice(i + 1); M.render(); }); },
   });
 })();

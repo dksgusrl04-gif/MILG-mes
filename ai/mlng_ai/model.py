@@ -3,7 +3,7 @@
   log(기대 불량 수) = log(노출) + α_공정 + Σ_슬롯 (β_슬롯 + δ_공정,슬롯) · x_슬롯
 
   β (공통 효과)   모든 공정이 같이 배우는 규칙 — 예: «온도가 평소보다 1σ 벗어나면 불량 ×1.2»
-  δ (공정별 보정) 공정마다 다른 부분. 0 쪽으로 강하게 당겨서(축소), 데이터가 충분할 때만 커진다
+  δ (공정별 보정) 공정마다 다른 부분. 한 공정에서만 보이는 효과는 여기로 — 공통 효과(β)는 여러 공정에서 일관될 때만 커진다 (사전 폭 β 0.3 < δ 0.5)
   α (공정 기준)   공정마다 평소 불량률
 
 누적 학습 (재학습 없이 갱신)
@@ -20,7 +20,7 @@ import numpy as np
 
 
 class CumulativeModel:
-    def __init__(self, slots: list[str], tau_beta: float = 0.5, tau_delta: float = 0.25, tau_alpha: float = 3.0):
+    def __init__(self, slots: list[str], tau_beta: float = 0.3, tau_delta: float = 0.5, tau_alpha: float = 3.0):
         self.slots = list(slots)
         self.K = len(self.slots)
         self.procs: list[str] = []
@@ -30,6 +30,7 @@ class CumulativeModel:
         self.phi: dict[str, list[float]] = {}        # 공정 → [χ² 합, 자유도 합]
         self.seen: dict[str, float] = {}             # 공정 → 지금까지 본 행 수
         self.acc: dict[str, list[float]] = {}        # 공정 → [Σy, Σn, Σy²/n] (공정 기준율만으로 본 과산포 — 초기 φ)
+        self.binary: dict[str, bool] = {}           # 공정 → 0/1 결과(한 개 단위)인가 — 그러면 cloglog 베르누이 가능도
         self.gate: dict[str, list[float]] = {}       # 공정 → [모델 누적 이탈도, 기준율 누적 이탈도] (예측 후 채점)
         self.q_alpha = 0.02                          # 배치마다 공정 기준율(log)이 변할 수 있는 정도 (분산)
         self.version = 0
@@ -78,12 +79,15 @@ class CumulativeModel:
         D = self.design(p, X)
         eta = D @ self.m
         sd = np.sqrt(np.einsum('ij,jk,ik->i', D, self.S, D).clip(0))
-        return n * np.exp(np.clip(eta, -30, 20)), sd
+        hi = np.log(7.0) if self.binary.get(p) else 20       # 0/1 공정: 확률 99.9% 이상은 같은 말 — 극단 외삽이 오차를 폭발시키지 않게
+        return n * np.exp(np.clip(eta, -30, hi)), sd
 
     # ── 신뢰 게이트: 이 공정에서 모델이 «공정 기준율» 보다 실제로 나았는가 (지금까지의 예측 후 채점)
     def base_rate(self, p: str) -> float:
+        """공정 기준 «율» (노출 1 당 기대 사건 수). 0/1 공정은 불량 비율 r 을 cloglog 척도 −log(1−r) 로"""
         sy, sn, _ = self.acc.get(p, [0, 0, 0])
-        return (sy + 0.5) / (sn + 1)
+        r = (sy + 0.5) / (sn + 1)
+        return float(-np.log(1 - min(r, 0.999))) if self.binary.get(p) else r
 
     def gate_weight(self, p: str) -> float:
         dm, db = self.gate.get(p, [0.0, 0.0])
@@ -96,8 +100,16 @@ class CumulativeModel:
         w = self.gate_weight(p)
         return w * mu + (1 - w) * self.base_rate(p) * n, sd, w
 
+    def prob(self, p: str, mu: np.ndarray) -> np.ndarray:
+        """기대 사건 수 → 불량 확률 (0/1 공정)"""
+        return 1 - np.exp(-np.asarray(mu))
+
     @staticmethod
-    def _dev(y, mu):
+    def _dev(y, mu, binary=False):
+        """이탈도: 개수는 포아송, 0/1 은 베르누이(p = 1 − e^−μ, cloglog)"""
+        if binary:
+            pr = np.clip(1 - np.exp(-np.maximum(mu, 1e-12)), 1e-9, 1 - 1e-9)
+            return float(-2 * np.sum(y * np.log(pr) + (1 - y) * np.log(1 - pr)))
         mu = np.maximum(mu, 1e-12)
         return float(2 * np.sum(np.where(y > 0, y * np.log(np.where(y > 0, y, 1) / mu), 0.0) - (y - mu)))
 
@@ -106,38 +118,51 @@ class CumulativeModel:
         if not batches:
             return
         for p, X, y, n in batches:            # 갱신 전 예측으로 과산포 φ 누적 (예측 후 학습)
+            if p not in self.binary:
+                self.binary[p] = bool(np.all(n == 1) and np.all((y == 0) | (y == 1)))
             if self.seen.get(p, 0) > 0:
                 mu, _ = self.predict(p, X, n)
-                self.phi[p][0] += float(np.sum((y - mu) ** 2 / np.maximum(mu, 1e-9)))
-                self.phi[p][1] += len(y)
+                if not self.binary[p]:
+                    self.phi[p][0] += float(np.sum((y - mu) ** 2 / np.maximum(mu, 1e-9)))
+                    self.phi[p][1] += len(y)
                 g = self.gate.setdefault(p, [0.0, 0.0])
-                g[0] += self._dev(y, mu); g[1] += self._dev(y, self.base_rate(p) * n)
+                g[0] += self._dev(y, mu, self.binary[p]); g[1] += self._dev(y, self.base_rate(p) * n, self.binary[p])
         S0 = self.S / lam
         for p, *_ in batches:                 # 공정 기준율은 천천히 움직일 수 있다 (상태 공간: α_t = α_t-1 + 잡음)
             if p in self.procs:
                 a, _ = self._idx(p); S0[a, a] += self.q_alpha
         P0 = np.linalg.inv(S0)
         m0 = self.m.copy()
-        Ds, ys, offs, ws = [], [], [], []
+        Ds, ys, offs, ws, bs = [], [], [], [], []
         for p, X, y, n in batches:
             seen = self.seen.get(p, 0)
             a = self.acc.setdefault(p, [0.0, 0.0, 0.0]); a[0] += float(y.sum()); a[1] += float(n.sum()); a[2] += float(np.sum(y * y / n))
             self.seen[p] = seen + len(y)
-            w = min(1.0, weight_cap / max(len(y), 1)) / self.dispersion(p)
-            Ds.append(self.design(p, X)); ys.append(y); offs.append(np.log(n)); ws.append(np.full(len(y), w))
-        D, y, off, w = np.vstack(Ds), np.concatenate(ys), np.concatenate(offs), np.concatenate(ws)
+            w = min(1.0, weight_cap / max(len(y), 1)) / (1.0 if self.binary[p] else self.dispersion(p))
+            Ds.append(self.design(p, X)); ys.append(y); offs.append(np.log(n)); ws.append(np.full(len(y), w)); bs.append(np.full(len(y), self.binary[p]))
+        D, y, off, w, b = np.vstack(Ds), np.concatenate(ys), np.concatenate(offs), np.concatenate(ws), np.concatenate(bs)
+
+        def grad_w(mu):
+            """η 에 대한 기울기 · 피셔 정보 — 개수: 포아송 · 0/1: P(y=1) = 1 − e^−μ (cloglog)"""
+            em = np.exp(-mu); q = np.clip(1 - em, 1e-12, None)
+            gb = np.where(y > 0, mu * em / q, -mu); hb = mu * mu * em / q
+            return np.where(b, gb, y - mu), np.where(b, hb, mu)
         th = m0.copy()
         for _ in range(iters):
-            eta = np.clip(off + D @ th, -30, 20)
-            mu = np.exp(eta)
-            g = D.T @ (w * (y - mu)) - P0 @ (th - m0)
-            H = (D * (w * mu)[:, None]).T @ D + P0
+            mu = np.exp(np.clip(off + D @ th, -30, 20))
+            gr, hw = grad_w(mu)
+            g = D.T @ (w * gr) - P0 @ (th - m0)
+            H = (D * (w * hw)[:, None]).T @ D + P0
             step = np.linalg.solve(H, g)
+            mx = np.max(np.abs(step))
+            if mx > 2:                                    # 큰 걸음은 줄여서 (0/1 가능도는 곡률이 급할 수 있음)
+                step *= 2 / mx
             th = th + step
-            if np.max(np.abs(step)) < 1e-6:
+            if mx < 1e-6:
                 break
         mu = np.exp(np.clip(off + D @ th, -30, 20))
-        H = (D * (w * mu)[:, None]).T @ D + P0
+        _, hw = grad_w(mu)
+        H = (D * (w * hw)[:, None]).T @ D + P0
         self.m, self.S = th, np.linalg.inv(H)
         self.S = (self.S + self.S.T) / 2
         self.version += 1
@@ -172,7 +197,7 @@ class CumulativeModel:
 
     # ── 저장 · 불러오기 (서버가 누적 상태를 이어 간다)
     def to_dict(self, full: bool = True):
-        d = {'slots': self.slots, 'procs': self.procs, 'tau': self.tau, 'm': self.m.tolist(), 'phi': self.phi, 'seen': self.seen, 'acc': self.acc, 'gate': self.gate, 'q_alpha': self.q_alpha, 'version': self.version, 'history': self.history}
+        d = {'slots': self.slots, 'procs': self.procs, 'tau': self.tau, 'm': self.m.tolist(), 'phi': self.phi, 'seen': self.seen, 'acc': self.acc, 'gate': self.gate, 'q_alpha': self.q_alpha, 'binary': self.binary, 'version': self.version, 'history': self.history}
         d['S'] = self.S.tolist() if full else np.diag(self.S).tolist()
         return d
 
@@ -181,7 +206,7 @@ class CumulativeModel:
         o = cls(d['slots'], *d['tau'])
         o.procs, o.m, o.S = list(d['procs']), np.array(d['m']), np.array(d['S'])
         o.phi, o.seen, o.version, o.history, o.acc = d['phi'], d['seen'], d['version'], d.get('history', []), d.get('acc', {})
-        o.gate, o.q_alpha = d.get('gate', {}), d.get('q_alpha', 0.02)
+        o.gate, o.q_alpha, o.binary = d.get('gate', {}), d.get('q_alpha', 0.02), d.get('binary', {})
         return o
 
     def save(self, path):
