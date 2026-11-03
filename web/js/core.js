@@ -1,4 +1,4 @@
-/* MLNG MES 공용 화면 틀
+/* MILG MES 공용 화면 틀
  * ───────────────────────────────────────────────────────────────
  * 공정 모듈은 MLNG.mod({...}) 로 자기를 등록만 한다. 메뉴·알람·검사 기록·테마·상세 서랍은 여기서 같이 쓴다.
  *
@@ -15,7 +15,7 @@
   'use strict';
   const CFG = window.MLNG_CONFIG || {};
   const D = window.MLNGData;
-  const M = window.MLNG = { S: null, cur: 'overview', mods: [], CFG, D };
+  const M = window.MLNG = { S: null, cur: CFG.START_VIEW || 'overview', mods: [], CFG, D };
   const $ = M.$ = s => document.querySelector(s);
 
   // ── 형식
@@ -163,6 +163,7 @@
   // ── 메뉴: 주문 → 자재 → 생산 → 품질 → 출하 흐름대로 7개. 화면은 메뉴 안의 탭, 세부는 작은 탭.
   //   모듈이 만든 화면 중 여기 없는 것은 «더보기» 아래로 자동으로 들어간다 (아무 화면도 잃지 않는다).
   M.NAV = [
+    { id: 'tx', t: '불량 원인 분석', i: 'spark', tabs: [['tx_report', '원인 분석 보고서'], ['tx_lots', '불량 LOT 추적']] },
     { id: 'home', t: '대시보드', i: 'home', tabs: [['overview', '종합 현황'], ['alerts', '알람 이력'], ['shift', '교대 인수인계']] },
     { id: 'order', t: '수주', i: 'deal', tabs: [['orders', '수주 현황'], ['deal_home', '고객 발주 · 납품']] },
     { id: 'mat', t: '자재 · 구매', i: 'cart', tabs: [['buy_home', '구매 요청'], ['buy_orders', '발주 승인']] },
@@ -254,11 +255,11 @@
     tidy($('#view'));
     bind($('#view'));
   };
-  // 화면 정돈: 긴 부제는 ⓘ 안으로, 요약 띠 설명은 한 줄로, 긴 안내문은 두 줄로 접는다
+  // 화면 정돈: 현업 MES 처럼 — 설명 문장은 화면에 두지 않는다. 숫자 · 표 · 상태 · 결과 메시지만 남긴다
+  const SENT = /(다|요|니다|음|함|됨|임|있음|없음|습니다)[.)]?$|—|→|\. /;   // 문장 · 해설 모양
   function tidy(root) {
-    root.querySelectorAll('h2 > .h2sub, h3 > .h2sub').forEach(s => { const t = s.textContent.trim(); if (!t) { s.remove(); return; }
-      if (t.length <= 14) return;   // 짧은 부제(번호·개수)는 그대로
-      const i = document.createElement('span'); i.className = 'hint'; i.tabIndex = 0; i.setAttribute('data-tip', t); i.setAttribute('aria-label', t); i.textContent = 'i'; s.replaceWith(i); });
+    root.querySelectorAll('h2 > .h2sub, h3 > .h2sub').forEach(s => { const t = s.textContent.trim();
+      if (!t || t.length > 14) s.remove(); });   // 짧은 부제(번호 · 개수 · 단위)만 남긴다
     root.querySelectorAll('.kstrip').forEach(k => k.classList.add('kbar'));
     // 표가 있는 카드마다 「엑셀」 단추 (현업 요구 1순위 — 화면에 보이는 표 그대로 .xlsx)
     if (window.MLNG_XLSX) root.querySelectorAll('.card').forEach(card => {
@@ -268,14 +269,14 @@
       b.onclick = e => { e.stopPropagation(); const title = (h.firstChild && h.firstChild.textContent || '표').trim() || '표', X = window.MLNG_XLSX; X.download(`${title}_${(M.S.asof || '').slice(0, 10)}.xlsx`, [X.fromTable(t, title)]); };
       h.appendChild(b); });   // 모든 화면의 요약 줄을 같은 상자 · 같은 칸 폭으로
     root.querySelectorAll('.kstrip .kpi .foot').forEach(x => { if (!x.title) x.title = x.textContent.trim(); });
-    // 설명문(.note)은 화면에서 걷어 카드 제목의 ⓘ 안으로 — 결과 메시지(.note.msg)만 화면에 남긴다
-    root.querySelectorAll('p.note:not(.msg):not([style*="color"])').forEach(n => {
-      const t = n.textContent.replace(/\s+/g, ' ').trim(), card = n.closest('.card'), h = card && card.querySelector('h2');
-      if (!t) { n.remove(); return; }
-      if (n.previousElementSibling && n.previousElementSibling.matches('h3')) return;   // 소제목 바로 아래 = 본문 내용
-      if (h) { let hi = h.querySelector(':scope > .hint'); if (!hi) { hi = document.createElement('span'); hi.className = 'hint'; hi.tabIndex = 0; hi.textContent = 'i'; const more = h.querySelector(':scope > .more'); more ? h.insertBefore(hi, more) : h.appendChild(hi); }
-        hi.setAttribute('data-tip', ((hi.getAttribute('data-tip') || '') + ' ' + t).trim()); hi.setAttribute('aria-label', hi.getAttribute('data-tip')); n.remove(); return; }
-      if (t.length > 110 && !n.dataset.fold) { n.dataset.fold = '1'; n.classList.add('fold'); n.onclick = () => n.classList.toggle('open'); } });
+    // 안내 · 해설 문단은 지운다 — 결과 메시지(.note.msg)와 색으로 상태를 알리는 줄만 남긴다
+    root.querySelectorAll('p.note:not(.msg):not([style*="color"])').forEach(n => n.remove());
+    // 회색 설명 줄: 표 칸 · 요약 칸 밖에서 문장처럼 생긴 것은 지운다
+    root.querySelectorAll('.muted').forEach(n => {
+      if (n.closest('td,th,.kpi,.tag,button,label,select,option,.empty')) return;
+      const t = n.textContent.replace(/\s+/g, ' ').trim();
+      if (t.length > 24 && SENT.test(t)) n.remove(); });
+    root.querySelectorAll('.hint').forEach(n => n.remove());
   }
   M.tidy = tidy;
   // 화면 안의 공통 동작: data-go(화면 이동) · data-row(상세) · data-insp(검사 기록) · data-set(모듈 상태 바꾸고 다시 그리기)

@@ -57,7 +57,7 @@ const ok = (c, m) => { if (c) pass++; else fails.push(m); console.log(`${c ? '�
   await go('prove'); await W(); await p.click('#pv-all').catch(() => {}); await W(300); ok(await ev(() => /같은 결과/.test(document.querySelector('#view').innerText)), '판단 증명 화면 재현');
 
   // 5.0 정돈: 메뉴 7개 · 주문 → 출하 대시보드
-  ok(await ev(() => document.querySelectorAll('#nav .nmain button').length === 9), '왼쪽 메뉴 9개 (나머지는 더보기)');
+  ok(await ev(() => document.querySelectorAll('#nav .nmain button').length === 10), '왼쪽 메뉴 10개 (나머지는 더보기)');
   ok(await ev(() => Object.keys(MLNG.views()).every(k => MLNG.where(k))), '모든 화면이 메뉴 · 탭 · 더보기 어딘가에 있음');
   await go('overview'); await W(); ok(await ev(() => document.querySelectorAll('.mtx th.sth').length === 5 && document.querySelectorAll('.mtx tbody tr').length > 0), '대시보드 주문 현황판 — 주문 × 5단계');
   ok(await ev(() => [...document.querySelectorAll('.mtx tbody tr')].every(r => r.querySelectorAll('.mc').length === 5)), '현황판 모든 행에 5단계 칸 (열 맞춤)');

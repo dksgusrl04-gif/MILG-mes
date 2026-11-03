@@ -3,7 +3,7 @@
 여기서는 칼럼의 뜻을 정하지 않는다 (그건 schema.py 가 이름 · 단위 · 값으로 스스로 판단).
 어댑터가 주는 것은 원본 데이터에 원래 있던 정보뿐: 칼럼 설명(label) · 단위 · 규격(설정값 ± 허용폭) · LOT 연결.
 
-MLNG 데모 공장 (web/data/demo.json — 공개 데이터셋을 한 공장 흐름으로 이은 것)
+MILG 데모 공장 (web/data/demo.json — 공개 데이터셋을 한 공장 흐름으로 이은 것)
   열처리 LOT · 프레스 LOT · 점용접 LOT · MCT 가공 회차 · 정밀가공 검사 부품
 공개 데이터 (ai/data/public — python -m mlng_ai fetch 로 받기, UCI 저장소 CC BY 4.0)
   AI4I 2020 예지보전(가공 설비) · Cylinder Bands(그라비어 인쇄 밴딩 불량) · SECOM(반도체 공정, 칼럼 이름 없음)
@@ -64,7 +64,7 @@ def fetch_public(force: bool = False) -> list[str]:
     return got
 
 
-# ── MLNG 데모 공장
+# ── MILG 데모 공장
 def _demo() -> dict:
     return json.loads(DEMO.read_text(encoding='utf-8'))
 

@@ -1,4 +1,4 @@
-/* MLNG MES 2.0 — 신뢰 계층 (회사 · 서명키 · 해시 · 신뢰 원장)
+/* MILG MES 2.0 — 신뢰 계층 (회사 · 서명키 · 해시 · 신뢰 원장)
  * ───────────────────────────────────────────────────────────────
  * · 회사마다 서명키(ECDSA P-256)를 둔다. 데모에서는 브라우저에서 만들고, 실제 운영에서는 각 회사 서버에만 비밀키가 있다.
  * · 모든 기록(계약 · LOT 여권 · 증명서 · 검수 · 에이전트 조치)은 SHA-256 해시로 묶고 회사 서명을 붙인다.
@@ -48,7 +48,7 @@
   const COMPANIES = [
     { id: 'OEM-A', name: '완성차 A', short: 'A', tier: 0, role: '완성차 조립', color: '#0E7490' },
     { id: 'T1-B', name: '1차 협력사 B', short: 'B', tier: 1, role: '시트 어셈블리', color: '#9333EA' },
-    { id: 'MLNG', name: 'MLNG 데모 공장', short: 'C', tier: 2, role: '시트 트랙 스토퍼 브래킷', color: '#4F46E5', self: true },
+    { id: 'MLNG', name: 'MILG 데모 공장', short: 'C', tier: 2, role: '시트 트랙 스토퍼 브래킷', color: '#4F46E5', self: true },
     { id: 'MAT-D', name: '강판 공급사 D', short: 'D', tier: 3, role: '냉연 강판 코일', color: '#B54708' },
   ];
   const co = id => COMPANIES.find(c => c.id === id) || { id, name: id, short: '?', color: '#64748B' };

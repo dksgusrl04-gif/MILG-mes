@@ -33,7 +33,7 @@
       <div class="kpi"><div class="lab">학습한 공정</div><div class="val">${A.sources.length}<small>개</small></div><div class="foot">칼럼 ${f(nCols, 0)}개 · ${f(A.sources.reduce((s, x) => s + x.rows, 0), 0)}행</div></div>
       <div class="kpi"><div class="lab">처음 보는 칼럼 해석</div><div class="val">${pct(A.schema_eval.holdout, 0)}</div><div class="foot">시험 칼럼 ${A.schema_eval.holdout_n}개</div></div>
       <div class="kpi"><div class="lab">누적 갱신</div><div class="val">${A.model_version}<small>회</small></div><div class="foot">입력 변화 감지 ${A.drift_n}회</div></div>
-      <div class="kpi"><div class="lab">공정 간 원인 찾기</div><div class="val">${i2 ? pct(i2.detected, 0) : '—'}</div><div class="foot">${i0 ? `효과 없을 때 오경보 ${pct(i0.detected, 0)}` : '가상 데이터 검증'}</div></div>
+      <div class="kpi"><div class="lab">원인 추적 검증 (가상 데이터)</div><div class="val">${i2 ? pct(i2.detected, 0) : '—'}</div><div class="foot">${i0 ? `효과 없을 때 오경보 ${pct(i0.detected, 0)}` : '가상 데이터 검증'}</div></div>
     </div>`;
   }
 
@@ -62,18 +62,18 @@
     const rows = Object.entries(A.prequential), sh = A.shared.filter(r => r.slot !== 'up:has').slice(0, 8);
     return `<div class="card" style="margin-top:16px"><h2>시간순 누적 학습 <span class="h2sub">먼저 예측 → 채점 → 학습</span></h2>
       <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-gate"><col class="c-rk"></colgroup>
-        <thead><tr><th>공정</th><th class="n">평가 행</th><th class="n">불량</th><th class="n">모델</th><th class="n">게이트 적용</th><th>모델 신뢰 (게이트)</th><th class="n">순위 지표</th></tr></thead>
+        <thead><tr><th>공정</th><th class="n">평가 행</th><th class="n">불량</th><th class="n">모델</th><th class="n">신뢰 반영</th><th>모델 신뢰 (게이트)</th><th class="n">순위 지표</th></tr></thead>
         <tbody>${rows.map(([k, r]) => `<tr><td><b>${esc(pname(k))}</b>${few(k) ? ' <span class="tag j-none">데이터 부족</span>' : ''}</td><td class="n">${f(r.n_eval, 0)}</td><td class="n">${f(r.events, 0)}</td>
           <td class="n ${r.dev_skill < 0 ? 'ng' : ''}">${sgn(r.dev_skill)}</td><td class="n"><b class="${r.gated_skill < 0 ? 'ng' : ''}">${sgn(r.gated_skill)}</b></td>
-          <td>${bar(r.gate, r.gate < 0.5 ? 'lo' : '')} <small>${f(r.gate, 2)}</small></td><td class="n">${r.auc != null ? 'AUC ' + f(r.auc, 2) : '순위상관 ' + f(r.spearman, 2)}</td></tr>`).join('')}</tbody></table></div>
+          <td>${bar(r.gate, r.gate < 0.5 ? 'lo' : '')} <small>${f(r.gate, 2)}</small></td><td class="n">${r.auc != null ? '구분력 ' + f(100 * r.auc, 0) + '점' : '순위상관 ' + f(r.spearman, 2)}</td></tr>`).join('')}</tbody></table></div>
       <p class="note">값 = 공정 기준율(지금까지의 불량률)보다 예측 오차(포아송 이탈도)를 줄인 비율. 게이트가 0 쪽이면 조건으로 불량이 설명되지 않는 공정 → 기준율로 물러나 예측을 망치지 않습니다.</p></div>
     <div class="grid g2" style="margin-top:16px">
       <div class="card"><h2>공통 효과 <span class="h2sub">모든 공정이 같이 배운 규칙 · 평소보다 1σ</span></h2>
-        <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-n"><col class="c-ci"></colgroup><thead><tr><th>슬롯</th><th class="n">배수</th><th class="n">90% 구간</th></tr></thead>
-        <tbody>${sh.map(r => `<tr><td>${esc(SK(r.slot))}</td><td class="n"><b>×${f(r.rr, 2)}</b></td><td class="n"><span class="ci ${r.lo > 1 || r.hi < 1 ? 'sig' : ''}">${f(r.lo, 2)}~${f(r.hi, 2)}</span></td></tr>`).join('')}</tbody></table></div></div>
+        <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-n"><col class="c-ci"></colgroup><thead><tr><th>신호</th><th class="n">배수</th><th class="n">90% 구간</th></tr></thead>
+        <tbody>${sh.map(r => `<tr><td>${esc(SK(r.slot))}</td><td class="n"><b>${f(r.rr, 2)}배</b></td><td class="n"><span class="ci ${r.lo > 1 || r.hi < 1 ? 'sig' : ''}">${f(r.lo, 2)}~${f(r.hi, 2)}</span></td></tr>`).join('')}</tbody></table></div></div>
       <div class="card"><h2>공정별 확실한 효과 <span class="h2sub">90% 구간이 1 을 벗어난 것</span></h2>
-        <div class="tbx"><table class="tb xtab"><colgroup><col class="c-p2"><col><col class="c-n"><col class="c-ci"></colgroup><thead><tr><th>공정</th><th>슬롯</th><th class="n">배수</th><th class="n">90% 구간</th></tr></thead>
-        <tbody>${Object.entries(A.procs).flatMap(([k, p]) => p.effects.slice(0, 3).map(r => `<tr><td>${esc(pname(k).replace(/ \(.*\)/, ''))}</td><td>${esc(SK(r.slot))}</td><td class="n"><b>×${f(r.rr, 2)}</b></td><td class="n"><span class="ci sig">${f(r.lo, 2)}~${f(r.hi, 2)}</span></td></tr>`)).join('') || '<tr><td colspan="4" class="empty">없음</td></tr>'}</tbody></table></div></div></div>`;
+        <div class="tbx"><table class="tb xtab"><colgroup><col class="c-p2"><col><col class="c-n"><col class="c-ci"></colgroup><thead><tr><th>공정</th><th>신호</th><th class="n">배수</th><th class="n">90% 구간</th></tr></thead>
+        <tbody>${Object.entries(A.procs).flatMap(([k, p]) => p.effects.slice(0, 3).map(r => `<tr><td>${esc(pname(k).replace(/ \(.*\)/, ''))}</td><td>${esc(SK(r.slot))}</td><td class="n"><b>${f(r.rr, 2)}배</b></td><td class="n"><span class="ci sig">${f(r.lo, 2)}~${f(r.hi, 2)}</span></td></tr>`)).join('') || '<tr><td colspan="4" class="empty">없음</td></tr>'}</tbody></table></div></div></div>`;
   }
 
   // ── 3. 처음 보는 공정
@@ -131,21 +131,21 @@
       <div class="card"><h2>불량 LOT · 부품 <span class="h2sub">${it.length}건</span></h2>
         <div class="tbx xlist"><table class="tb xtab"><colgroup><col><col class="c-p2"><col class="c-n"></colgroup><thead><tr><th>번호</th><th>공정</th><th class="n">${'예측'}</th></tr></thead>
         <tbody>${it.slice(0, 60).map(r => `<tr class="click ${r.id === cur.id ? 'sel' : ''}" data-xa="pick|${esc(r.id)}"><td class="mono">${esc(r.id)}</td><td>${esc(pname(r.k).replace(/ \(.*\)/, ''))}</td>
-          <td class="n">${r.p != null ? (r.p >= 0.99 ? '≥99%' : pct(r.p, 0)) : '×' + f(r.ratio, 1)}</td></tr>`).join('')}</tbody></table></div></div>
+          <td class="n">${r.p != null ? (r.p >= 0.99 ? '≥99%' : pct(r.p, 0)) : f(r.ratio, 1) + '배'}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="card"><h2>${esc(cur.id)} <span class="h2sub">${esc(pname(cur.k))}${cur.lot && cur.lot !== cur.id ? ' · ' + esc(cur.lot) : ''}</span>
         <span class="more"><span class="tag ${g >= 0.5 ? 'j-ok' : 'j-warn'}">모델 신뢰 ${f(g, 2)}</span></span></h2>
         <div class="xsum">${cur.p != null ? `<div><span>불량 확률 (예측)</span><b>${cur.p >= 0.99 ? '≥ 99%' : pct(cur.p, 0)}</b></div><div><span>공정 평균</span><b>${pct(1 - Math.exp(-(A.procs[cur.k].base_rate || 0)), 1)}</b></div>`
-          : `<div><span>실제 불량</span><b>${f(cur.y, 0)}개</b></div><div><span>예상</span><b>${f(cur.exp, 1)}개</b></div><div><span>실제 / 예상</span><b>×${f(cur.ratio, 1)}</b></div>`}</div>
+          : `<div><span>실제 불량</span><b>${f(cur.y, 0)}개</b></div><div><span>예상</span><b>${f(cur.exp, 1)}개</b></div><div><span>실제 / 예상</span><b>${f(cur.ratio, 1)}배</b></div>`}</div>
         <h3 class="dh">불량을 키운 쪽 <span class="h2sub">log 기여 · 90% 구간</span></h3>
         <div class="xctr">${cur.top.filter(r => r.slot !== 'up:has').map(r => `<div class="xc ${r.slot.startsWith('up:') ? 'up' : ''}">
-          <div class="xn"><b>${esc(SK(r.slot))}</b><small>${esc(r.src || '')}${r.x ? ` · 평소보다 ${f(r.x, 1)}σ` : ''}</small></div>
+          <div class="xn"><b>${esc(SK(r.slot))}</b><small>${esc(r.src || '')}${r.x ? ` · 표준편차 ${f(r.x, 1)}배` : ''}</small></div>
           <div class="xg"><i class="ci" style="left:${X(Math.min(r.lo, r.hi)).toFixed(1)}%;width:${Math.max(0.6, X(Math.max(r.lo, r.hi)) - X(Math.min(r.lo, r.hi))).toFixed(1)}%"></i><i class="pt ${r.c > 0 ? 'pos' : 'neg'}" style="left:${X(r.c).toFixed(1)}%"></i><i class="z"></i></div>
           <div class="xv ${r.lo > 0 ? 'sig' : ''}">${r.c >= 0 ? '+' : ''}${f(r.c, 2)}</div></div>`).join('')}</div>
         ${g < 0.5 ? '<p class="note">이 공정은 조건 기록으로 불량이 잘 설명되지 않아(게이트 낮음) 기여는 참고용입니다.</p>' : ''}</div></div>
     <div class="card" style="margin-top:16px"><h2>원인 추적 검증 <span class="h2sub">정답을 심은 가상 데이터 · 앞 공정 로 온도 → 뒤 공정 불량</span></h2>
-      <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-gate"><col class="c-n"></colgroup><thead><tr><th>심은 효과 (1σ 당)</th><th>찾아낸 비율</th><th class="n">순위 (중앙값)</th></tr></thead>
-      <tbody>${(A.injection || []).map(r => `<tr><td>${r.effect === 1 ? '효과 없음 (오경보 시험)' : '×' + f(r.effect, 1)}</td><td>${bar(r.detected, r.effect === 1 ? 'lo' : '')} <small>${pct(r.detected, 0)}</small></td><td class="n">${f(r.median_rank, 0)}위</td></tr>`).join('')}</tbody></table></div>
-      <p class="note">MLNG 데모 공장의 LOT 연결은 서로 다른 공개 데이터를 이은 것이라 실제 공정 간 인과가 없습니다. 그래서 원인 추적 능력은 정답을 아는 가상 데이터로 따로 검증했습니다.</p></div>`;
+      <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-gate"><col class="c-n"></colgroup><thead><tr><th>심은 효과 크기</th><th>찾아낸 비율</th><th class="n">순위 (중앙값)</th></tr></thead>
+      <tbody>${(A.injection || []).map(r => `<tr><td>${r.effect === 1 ? '효과 없음 (오경보 시험)' : f(r.effect, 1) + '배'}</td><td>${bar(r.detected, r.effect === 1 ? 'lo' : '')} <small>${pct(r.detected, 0)}</small></td><td class="n">${f(r.median_rank, 0)}위</td></tr>`).join('')}</tbody></table></div>
+      <p class="note">MILG 데모 공장의 LOT 연결은 서로 다른 공개 데이터를 이은 것이라 실제 공정 간 인과가 없습니다. 그래서 원인 추적 능력은 정답을 아는 가상 데이터로 따로 검증했습니다.</p></div>`;
   }
 
   // ── 6. 데이터 진단 (영업 PoC)
@@ -175,15 +175,15 @@
       <div class="tbx"><table class="tb xtab xsumt"><thead><tr><th class="n">행</th><th class="n">칼럼</th><th class="n">불량률</th><th class="n">불량 손실</th><th class="n">준비도</th><th>결과 칼럼</th><th>기간</th></tr></thead>
         <tbody><tr><td class="n">${f(q.rows, 0)}</td><td class="n">${q.cols}</td><td class="n">${r.defect_rate != null ? pct(r.defect_rate, 1) : '—'}</td><td class="n">${r.copq ? won(r.copq.total) : '—'}</td>
           <td class="n">${r.readiness.score} / 100</td><td>${esc(r.outcome || '없음')}</td><td>${q.time_range ? esc(q.time_range.join(' ~ ')) : '—'}</td></tr></tbody></table></div>
-      <ol class="xnext">${(r.next || []).map(t => `<li>${esc(t)}</li>`).join('')}</ol></div>`;
+      </div>`;
     const fac = `<div class="card" style="margin-top:16px"><h2>불량 원인 후보 <span class="h2sub">칼럼별 구간 불량률 · z ≥ 2</span></h2>
       ${fs.length ? `<div class="tbx"><table class="tb xtab"><colgroup><col class="c-n"><col><col><col class="c-n"><col class="c-n"><col class="c-gate"><col style="width:120px"></colgroup>
         <thead><tr><th class="n">순위</th><th>칼럼</th><th>나쁜 구간</th><th class="n">구간 불량률</th><th class="n">나머지</th><th>배수</th><th class="n">${r.unit_cost ? '초과 손실' : '초과 불량'}</th></tr></thead>
         <tbody>${fs.map((x, i) => `<tr><td class="n">${i + 1}</td><td>${esc(x.label)}</td><td class="mono">${esc(x.worst)}</td><td class="n">${pct(x.worst_rate, 1)}</td><td class="n">${pct(x.rest_rate, 1)}</td>
-          <td>${bar(x.lift / mx)} <small>${f(x.lift, 1)}×</small></td><td class="n">${r.unit_cost ? won(x.excess * r.unit_cost) : f(x.excess, 1)}</td></tr>`).join('')}</tbody></table></div>
+          <td>${bar(x.lift / mx)} <small>${f(x.lift, 1)}배</small></td><td class="n">${r.unit_cost ? won(x.excess * r.unit_cost) : f(x.excess, 1)}</td></tr>`).join('')}</tbody></table></div>
       <p class="note">초과 = 그 구간 불량률을 나머지 수준으로 낮췄을 때 줄어드는 양(추정). 상관이며, 인과는 현장 확인.</p>` : '<div class="empty">칼럼 하나만으로 뚜렷한 차이가 없습니다 — 여러 조건이 겹치는 경우는 누적 학습에서 다룹니다.</div>'}</div>`;
-    const sig = (ai.signals || []).length ? `<div class="card"><h2>AI 신호 <span class="h2sub">학습 0건 · 공통 효과${ai.zero_shot_auc != null ? ' · AUC ' + f(ai.zero_shot_auc, 2) : ''}</span></h2>
-      <div class="tbx"><table class="tb xtab"><colgroup><col><col><col class="c-n"></colgroup><thead><tr><th>신호</th><th>주로 나온 칼럼</th><th class="n">불량 행 (σ)</th></tr></thead>
+    const sig = (ai.signals || []).length ? `<div class="card"><h2>AI 신호 <span class="h2sub">학습 0건 · 공통 효과${ai.zero_shot_auc != null ? ' · 구분력 ' + f(100 * ai.zero_shot_auc, 0) + '점' : ''}</span></h2>
+      <div class="tbx"><table class="tb xtab"><colgroup><col><col><col class="c-n"></colgroup><thead><tr><th>신호</th><th>주로 나온 칼럼</th><th class="n">평소 대비 (표준편차)</th></tr></thead>
       <tbody>${ai.signals.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.source || '—')}</td><td class="n">+${f(x.gap_sd, 2)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
     const rd = `<div class="card"><h2>데이터 준비도 <span class="h2sub">${r.readiness.score} / 100</span></h2>
       <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-role"><col class="c-n"></colgroup><thead><tr><th>항목</th><th>상태</th><th class="n">배점</th></tr></thead>
@@ -211,6 +211,10 @@
     return `${kpis()}<div class="spc-sub" style="margin-top:12px">${M.seg('xa', 'tab|' + st.tab, [['tab|schema', '칼럼 해석'], ['tab|learn', '누적 학습'], ['tab|cold', '처음 보는 공정'], ['tab|raw', '적산 · 비정형'], ['tab|trace', '원인 추적'], ['tab|dx', '데이터 진단']])}
       <span class="muted" style="font-size:12px;margin-left:auto">${esc(A.version)} · ${esc(A.built)}</span></div>${body()}`;
   };
+  const wrap = fn => () => { load(); if (err) return `<div class="card"><div class="empty">${esc(err)}</div></div>`;
+    if (!A) return '<div class="card"><div class="empty">불러오는 중…</div></div>'; return fn(); };
+  V.tx_report = wrap(vDiag);
+  V.tx_lots = wrap(() => { const h = vTrace(), i = h.indexOf('<div class="card" style="margin-top:16px"><h2>원인 추적 검증'); return i > 0 ? h.slice(0, i) : h; });
   M.aiModel = () => A;
   M.mod({
     id: 'xai', group: '분석', order: 5.7,

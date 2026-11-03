@@ -1,15 +1,17 @@
-/* MLNG MES 설정
+/* MILG MES 설정
  * ───────────────────────────────────────────────────────────────
  * 비워 두면 «데모 모드» — data/demo.json 만 보여 준다.
  * 채우면 Supabase 에서 읽는다 (로그인 없음, anon 키). 표가 비어 있으면 데모 스냅샷을 계속 보여 준다.
- * MLNG 전용 Supabase 프로젝트 값 — MCT MES 프로젝트와 섞지 않는다.
+ * MILG 전용 Supabase 프로젝트 값 — MCT MES 프로젝트와 섞지 않는다.
  * anon 키는 공개돼도 되는 키다. 절대 넣으면 안 되는 것: service_role 키
  */
 window.MLNG_CONFIG = {
-  SUPABASE_URL: 'https://vwgfeutvcvogutxuhcxt.supabase.co',   // MLNG MES 전용 프로젝트
+  SUPABASE_URL: 'https://vwgfeutvcvogutxuhcxt.supabase.co',   // MILG MES 전용 프로젝트
   SUPABASE_ANON_KEY: 'sb_publishable_7FxcyivB8vrrJJdrWTSl9g_FZUiEV17',   // Publishable key (공개용)
   // 공정 통합 AI 엔진 주소 (데이터 진단 업로드) — 비우면 SUPABASE_URL 을 쓴다 (자체 서버에서는 같은 주소)
   AI_URL: '',
+  // 첫 화면 — 'tx_report' = 불량 원인 분석 보고서 (MILG Trace) · 'overview' = 종합 현황
+  START_VIEW: 'tx_report',
 
   // 아직 이 셸에 합치지 않은 모듈 — 공정 흐름에서 누르면 새 탭으로 연다 (비우면 링크 없음)
   LINKS: {
@@ -46,7 +48,7 @@ window.MLNG_CONFIG = {
   },
   // 공구 주문 — 등록 품목은 js/catalog.js. 추천이 없어도 골라서 발주할 수 있다
   BUY: {
-    COMPANY: 'MLNG 데모 공장',          // 발주서 머리
+    COMPANY: 'MILG 데모 공장',          // 발주서 머리
     LINE: '시트 트랙 스토퍼 브래킷 라인',
     DEPT: '생산기술팀',                 // 요청부서
     STEPS: ['담당', '검토', '승인'],     // 결재 단계 (순서대로)

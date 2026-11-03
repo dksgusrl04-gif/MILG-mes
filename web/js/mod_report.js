@@ -61,7 +61,7 @@
       <h2>5. 특이사항</h2>
       <table class="rt"><thead><tr><th>등급</th><th>공정</th><th>내용</th></tr></thead>
         <tbody>${R.notes.map(a => `<tr><td>${a.grade}</td><td>${esc(M.PROC[a.proc] || a.proc)}</td><td class="l">${esc(a.title)}</td></tr>`).join('') || '<tr><td colspan="3">특이사항 없음</td></tr>'}</tbody></table>
-      <p class="rfoot">${esc(F.name)} · MLNG MES 자동 집계 — 계획 = 라인 밸런스 일 계획, 가동 · 비가동 · OEE = 설비 OEE 기준</p>
+      <p class="rfoot">${esc(F.name)} · MILG MES 자동 집계 — 계획 = 라인 밸런스 일 계획, 가동 · 비가동 · OEE = 설비 OEE 기준</p>
     </div>`;
   };
   function xlsx() {

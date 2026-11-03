@@ -130,14 +130,14 @@
     const vs = vres && vres.steps;
     return `<div class="pp">
       <div class="pph"><div><div class="ppt">LOT 디지털 여권</div><div class="ppn">${esc(p.id)}</div><div class="muted">${esc(p.product)} · ${f(p.qty, 0)}개 · 발행 ${esc(p.issued)}</div>
-        ${M.dl([['발행', 'MLNG 데모 공장 · 키 ' + esc(p.sig.kid)], ['사슬 끝 해시', `<span class="mono">${esc(T.short(p.root))}</span>`], ['서명', `<span class="mono">${esc(p.sig.alg)} · ${esc(p.sig.sig.slice(0, 18))}…</span>`]])}</div>
+        ${M.dl([['발행', 'MILG 데모 공장 · 키 ' + esc(p.sig.kid)], ['사슬 끝 해시', `<span class="mono">${esc(T.short(p.root))}</span>`], ['서명', `<span class="mono">${esc(p.sig.alg)} · ${esc(p.sig.sig.slice(0, 18))}…</span>`]])}</div>
         <div class="qr" title="${esc(verifyUrl(p))}">${qrSvg(verifyUrl(p))}<div class="muted" style="font-size:11px;text-align:center">스캔하면 검증 화면</div></div></div>
       <div class="ppsteps">${p.steps.map((s, i) => `<div class="pps ${vs ? (vs[i].ok ? 'ok' : 'bad') : ''}">
         <div class="ppi">${vs ? (vs[i].ok ? '✓' : '✕') : i + 1}</div>
         <div class="ppb"><div class="ppnm">${esc(s.name)} <span class="muted">· ${esc(s.lot)}${s.equip ? ' · ' + esc(s.equip) : ''} · ${esc(String(s.at || '').slice(0, 16))}</span> <span class="cotag" style="--cc:${T.co(s.company).color}"><b>${esc(T.co(s.company).short)}</b>${esc(T.co(s.company).name)}</span></div>
           <div class="ppd">${stepVal(s)}${s.cert ? ` · 성적서 ${esc(s.cert.grade)} · TS ${s.cert.TS_MPa} MPa · <b>D사 서명</b>` : ''}</div>
           <div class="pph2 mono">해시 ${esc(T.short(s.hash))} ← 앞 ${esc(T.short(s.prev))}</div></div></div>`).join('')}</div>
-      ${vres ? `<div class="note" style="color:${vres.ok ? 'var(--ok)' : 'var(--danger-ink)'}">${vres.ok ? '진본입니다 — 공정 사슬, MLNG 서명, 소재 성적서(D사) 서명이 모두 맞습니다.'
+      ${vres ? `<div class="note" style="color:${vres.ok ? 'var(--ok)' : 'var(--danger-ink)'}">${vres.ok ? '진본입니다 — 공정 사슬, MILG 서명, 소재 성적서(D사) 서명이 모두 맞습니다.'
         : `위변조 탐지 — ${vres.broke != null ? `${vres.broke + 1}단계(${esc(p.steps[vres.broke].name)})부터 사슬이 맞지 않습니다. ` : ''}${vres.sig.ok ? '' : '서명: ' + esc(vres.sig.why)}`}</div>` : ''}
       ${p.pcf ? `<h3 class="dh">탄소 발자국 (부품 1개당)</h3><div class="hbars">${Object.entries(p.pcf.part).filter(([, v]) => v > 0).map(([k, v]) => `<div class="hb"><span>${esc(k)}</span><i style="--w:${Math.max(2, v / p.pcf.total * 100)}%"></i><b>${f(v * 1000, 1)} g</b></div>`).join('')}</div>` : ''}
     </div>`;
@@ -155,7 +155,7 @@
     const hid = m[1], p = await issue(hid), v = await verify(p), match = p.root.startsWith(m[2]);
     M.kdrawer('QR 검증', `LOT 디지털 여권 ${p.id}`, [
       { html: `<div class="vbig ${v.ok && match ? 'ok' : 'bad'}">${v.ok && match ? '✓ 진본' : '✕ 확인 실패'}</div>` },
-      { html: M.dl([['제품', esc(p.product)], ['LOT', esc(p.lot)], ['수량', f(p.qty, 0) + '개'], ['QR 해시', `<span class="mono">${esc(m[2])}…</span> ${match ? '일치' : '<b style="color:var(--danger-ink)">불일치</b>'}`], ['공정 사슬', `${v.steps.filter(s => s.ok).length}/${v.steps.length} 단계 일치`], ['MLNG 서명', v.sig.ok ? '일치' : esc(v.sig.why)], ['소재 성적서', v.certs.map(c => `${esc(c.lot)} ${c.ok ? '✓' : '✕'}`).join(' · ') || '—']]) },
+      { html: M.dl([['제품', esc(p.product)], ['LOT', esc(p.lot)], ['수량', f(p.qty, 0) + '개'], ['QR 해시', `<span class="mono">${esc(m[2])}…</span> ${match ? '일치' : '<b style="color:var(--danger-ink)">불일치</b>'}`], ['공정 사슬', `${v.steps.filter(s => s.ok).length}/${v.steps.length} 단계 일치`], ['MILG 서명', v.sig.ok ? '일치' : esc(v.sig.why)], ['소재 성적서', v.certs.map(c => `${esc(c.lot)} ${c.ok ? '✓' : '✕'}`).join(' · ') || '—']]) },
       { html: `<button class="btn" data-go="pass_home">여권 전체 보기</button>` }]);
     cur = hid; history.replaceState(null, '', location.pathname);
   }

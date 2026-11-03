@@ -241,7 +241,7 @@ def eight_d(r: dict) -> dict | None:
     if fs and r.get('events'):
         goal = max(r['events'] - fs[0]['excess'], 0) / max(r.get('units') or 1, 1)
     return {'d2': d2, 'd4': d4, 'd4_ai': sig, 'd5': d5, 'd6': d6, 'goal_rate': goal,
-            'd7': ['원인 칼럼의 관리 범위를 MES 관리 한계로 등록', '실시간 위험도 감시 (MLNG 예측 API) — 구간 진입 시 작업자 알림', '대책 후 데이터로 누적 학습 → 원인 재확인'],
+            'd7': ['원인 칼럼의 관리 범위를 MES 관리 한계로 등록', '실시간 위험도 감시 (MILG 예측 API) — 구간 진입 시 작업자 알림', '대책 후 데이터로 누적 학습 → 원인 재확인'],
             'manual': ['D1 팀 구성', 'D3 임시 조치 (격리 · 전수 검사)', 'D8 종결 · 승인']}
 
 
@@ -261,7 +261,7 @@ th{background:#f5f6f8;font-weight:600;color:#3a4252}td.n,th.n{text-align:right;f
 """
 
 
-def render_html(r: dict, brand: str = 'MLNG') -> str:
+def render_html(r: dict, brand: str = 'MILG') -> str:
     e = html.escape
     q = r['quality']
     pct = lambda v: '-' if v is None else f'{v * 100:.1f}%'   # noqa: E731
