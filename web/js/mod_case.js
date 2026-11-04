@@ -231,7 +231,7 @@
   let cur = null, msg = '';
   const stTag = c => c.st.stage >= 5 ? '<span class="tag t-off">종결</span>' : `<span class="tag ${c.level === 'danger' ? 'j-danger' : 'j-warn'}">${esc(STAGES[c.st.stage])}</span>`;
   const stepper = c => `<div class="cstep">${STAGES.map((s, i) => `<span class="${i < c.st.stage ? 'done' : i === c.st.stage ? 'now' : ''}"><i>${i < c.st.stage ? '✓' : i + 1}</i>${esc(s)}</span>`).join('')}</div>`;
-  const moneyRow = m => `<div class="cmoney">${Object.entries(DX.KIND).filter(([k]) => m[k]).map(([k, [t, d]]) => `<div class="k-${k}"><small>${esc(t)}</small><b>${DX.wonShort(m[k])}</b><em>${esc(d)}</em></div>`).join('') || '<div><small>금액</small><b>—</b><em>환산할 근거 없음</em></div>'}</div>`;
+  const moneyRow = m => `<div class="cmoney">${Object.entries(DX.KIND).filter(([k]) => m[k]).map(([k, [t, d]]) => `<div class="k-${k}" title="${esc(d)}"><small>${esc(t)}</small><b>${DX.wonShort(m[k])}</b></div>`).join('') || '<div><small>금액</small><b>—</b></div>'}</div>`;
   const V = {};
   V.cases = () => {
     if (!T.ready) return '<div class="empty">신뢰 계층을 준비하는 중…</div>';
@@ -245,9 +245,8 @@
       <div class="kpi"><div class="lab">종결</div><div class="val">${cs.length - op.length}<small>건</small></div><div class="foot">단계마다 서명 · 원장 기록</div></div>
     </div>
     <div class="card"><h2>품질 이슈 목록 <span class="h2sub">관련 알람을 한데 묶고, 영향 범위 · 추정 원인 · 돈 · 조치를 미리 조사해 둡니다</span></h2>
-      ${cs.length ? `<div class="clist">${cs.map(x => `<div class="crow ${x.id === cur ? 'on' : ''} ${x.st.stage >= 5 ? 'closed' : x.level}" data-csel="${esc(x.id)}">
-        <div class="cm"><div class="ct">${M.procTag(x.proc)} <b>${esc(x.name)}</b> ${stTag(x)}</div><div class="cs">${esc(x.id)} · 알람 ${x.alerts.length} · LOT ${x.lots.length}${x.customers.length ? ` · 고객 ${x.customers.map(k => T.co(k).short).join(',')}` : ''} · 시작 ${esc(String(x.opened).slice(5, 16))}</div></div>
-        <div class="cw">${x.money.won ? DX.wonShort(x.money.won) + '<small>원</small>' : '<span class="muted">—</span>'}</div></div>`).join('')}</div>` : '<div class="empty">지금 미결 이슈가 없습니다</div>'}</div>
+      ${cs.length ? `<div class="tbx"><table class="tb issue-table"><thead><tr><th>이슈 번호</th><th>공정</th><th>이슈 내용</th><th>처리 단계</th><th class="n">영향 LOT</th><th class="n">예상 손실</th></tr></thead><tbody>${cs.map(x => `<tr class="click ${x.id === cur ? 'selected' : ''}" data-csel="${esc(x.id)}">
+        <td class="mono">${esc(x.id)}</td><td>${M.procTag(x.proc)}</td><td><b>${esc(x.name)}</b></td><td>${stTag(x)}</td><td class="n">${x.lots.length}</td><td class="n">${x.money.won ? DX.wonShort(x.money.won) + '원' : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">미결 이슈 없음</div>'}</div>
     ${c ? detail(c) : ''}`;
   };
   function detail(c) {
@@ -262,9 +261,9 @@
       ${nx && c.st.stage < 5 ? `<div class="cnext"><b>다음 조치</b> ${esc(nx.label)} <button class="btn pri sm" data-crun="${esc(c.id)}|${esc(nx.id)}">실행</button><button class="btn sm" data-askq="${esc(`이슈 ${c.id} (${c.name}) — 추정 원인과 「${nx.label}」 말고 다른 선택지를 알려줘`)}">AI 문의</button></div>` : ''}
       <div class="grid g2" style="align-items:start;margin-top:12px">
         <div><h3 class="dh" style="margin-top:0">손실 금액 ${M.asmTag ? M.asmTag('loss') : ''}<span class="h2sub">항목에 마우스를 올리면 산출 근거</span></h3>${moneyRow(c.money)}
-          ${c.money.basis.length ? `<ul class="plain cbasis">${c.money.basis.map(b => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}
+          ${c.money.basis.length ? `<details class="ui-details"><summary>비용 산정 근거</summary><ul class="plain cbasis">${c.money.basis.map(b => `<li>${esc(b)}</li>`).join('')}</ul></details>` : ''}
           <h3 class="dh">영향 범위</h3>
-          ${sc ? `<div class="cscope"><div><i style="--w:${Math.max(1.5, Math.min(100, sc / c.scope.all * 100))}%"></i></div><span>${esc(c.scope.unit)} ${f(c.scope.all, 0)}개 중 <b>${f(sc, 0)}개 (${pct(sc / c.scope.all, sc / c.scope.all < 0.01 ? 2 : 1)})</b>만 조치 대상 — 전수 대신 이것만 격리하면 됩니다</span></div>` : ''}
+          ${sc ? `<div class="cscope"><div><i style="--w:${Math.max(1.5, Math.min(100, sc / c.scope.all * 100))}%"></i></div><span>조사 대상 <b>${f(sc, 0)}개 (${pct(sc / c.scope.all, sc / c.scope.all < 0.01 ? 2 : 1)})</b> · ${esc(c.scope.unit)} ${f(c.scope.all, 0)}개 기준</span></div>` : ''}
           ${M.table([['LOT', l => `<b>${esc(l.id)}</b>`], ['공정', l => M.procTag(l.proc)], ['수량', l => f(l.qty, 0), 'n'], ['상태', l => `<span class="tag ${l.ship.k === 'shipped' ? 'j-danger' : l.ship.k === 'held' ? 'j-ok' : 'j-warn'}">${esc(l.ship.t)}</span>`], ['이유', l => `<span class="muted" style="font-size:12px">${esc(l.why)}</span>`]], c.lots.slice(0, 14), { wrap: false, click: l => 'trace:' + l.id, empty: '연결된 LOT 이 없습니다' })}
           ${c.lots.length > 14 ? `<p class="note">외 ${c.lots.length - 14} LOT</p>` : ''}
           ${c.clauseRisk.length ? `<h3 class="dh">기준 초과 우려 품질 항목 <span class="h2sub">아직 안 보낸 LOT 을 고객 계약으로 미리 판정</span></h3>${M.table([['LOT', r => `<b>${esc(r.lot)}</b>`], ['조항', 'label'], ['예상', r => `<span class="${r.fail ? 'ng' : ''}" style="${r.fail ? '' : 'color:var(--warn-ink)'}">${esc(r.actual)}</span>`, 'n'], ['기준', 'th']], c.clauseRisk, { wrap: false, click: r => 'gate:' + r.lot })}` : ''}
@@ -275,10 +274,10 @@
             return `<label class="cc ${c.st.cause === i ? 'pick' : ''}"><input type="radio" name="cc-${esc(c.id)}" data-ccause="${esc(c.id)}|${i}" ${c.st.cause === i ? 'checked' : ''}><div><b>${esc(x.t)}</b> <span class="tag ${k}">연관성 ${esc(t)}</span><div class="muted" style="font-size:12.5px;margin-top:2px">${esc(x.d)}</div>${x.cmp && x.cmp.p != null ? `<div style="font-size:12px;margin-top:3px;color:var(--ink-2)">p 값 = ${f(x.cmp.p, 3)}${x.q != null ? ` · 보정 q = ${f(x.q, 3)}` : ''} · 배수 90% 구간 ${f(x.cmp.lo, 2)}~${f(x.cmp.hi, 2)}</div>` : ''}</div></label>`; }).join('') || '<div class="empty">추정 원인을 만들 데이터가 없습니다</div>'}</div>
           <p class="note">연관성 = 순열 검정 p 값과 부트스트랩 90% 신뢰구간 기준 (p &lt; 0.01 · 하한 1.2배 이상 = 높음, p &lt; 0.1 = 보통, 반대로 뚜렷하면 역상관). 후보가 여럿이면 BH 보정 q 값을 함께 봅니다. 인과 확정이 아니라 우선 확인 대상이며, 선택하면 「원인 분석」 단계에 기록됩니다.</p>
           <h3 class="dh">조치</h3>${actBlock('contain', '봉쇄 조치')}${actBlock('cause', '원인 분석')}${actBlock('fix', '시정 조치')}${actBlock('prevent', '재발 방지')}
-          ${c.experiment ? `<div class="note" style="margin-top:6px">${M.ic('trace')} <b>원인 확인 실험</b> — «${esc(c.experiment.cause)}»: 지금 데이터는 p 값 = ${f(c.experiment.p, 3)}. 두 조건을 ${c.experiment.n ? `<b>${c.experiment.n}작업씩</b> 번갈아 운전하면` : '충분히 운전하면'} 5% 유의수준 · 80% 검출력으로 가릴 수 있습니다 (작업당 기대 불량 ${f(c.experiment.m1, 1)} vs ${f(c.experiment.m2, 1)}개).${c.st.exp ? ` <span class="tag j-ok">계획 서명 ${esc(c.st.exp.at.slice(5, 16))}</span>` : ''}</div>` : ''}
-          <div class="pacts"><button class="btn sm" data-cfirst="${esc(c.id)}">처음 징후는 언제였나? (시점 조회)</button><span id="cfirst" class="muted" style="font-size:12.5px">${c.st.first ? esc(c.st.first) : ''}</span></div>
+          ${c.experiment ? `<details class="ui-details"><summary>확인 시험 산정 근거 ${c.st.exp ? '· 계획 서명됨' : ''}</summary><p>«${esc(c.experiment.cause)}» p = ${f(c.experiment.p, 3)} · 조건별 ${c.experiment.n || '미정'}작업. 유의수준 5% · 검출력 80% 가정, 기대 불량 ${f(c.experiment.m1, 1)} / ${f(c.experiment.m2, 1)}개. 실제 시험은 공정 담당자 검토·승인 후 진행합니다.</p></details>` : ''}
+          <div class="pacts"><button class="btn sm" data-cfirst="${esc(c.id)}">최초 발생 조회</button><span id="cfirst" class="muted" style="font-size:12.5px">${c.st.first ? esc(c.st.first) : ''}</span></div>
         </div></div>
-      ${M.spc ? M.spc.caseReport(c) : ''}
+      ${M.spc ? `<details class="ui-fold"><summary>상세 분석 보고서 · SPC / 층별 / 원인 검정</summary>${M.spc.caseReport(c)}</details>` : ''}
       <div class="grid g2" style="margin-top:12px;align-items:start">
         <div><h3 class="dh" style="margin-top:0">묶인 알람</h3><div class="alist">${c.alerts.map(a => { const m = DX.money(a); return `<div class="al ${esc(a.level)} ${a.go ? 'click' : ''}" ${a.go ? `data-row="${esc(a.go)}"` : ''}><div class="lv"></div><div style="min-width:0;flex:1"><div class="tt">${esc(a.title)} ${DX.chip(m)}</div><div class="bd">${esc(a.body || '')}</div></div></div>`; }).join('')}</div></div>
         <div><h3 class="dh" style="margin-top:0">이슈 기록 <a class="more" href="#" data-go="net_ledger">신뢰 원장 →</a></h3>
@@ -294,7 +293,7 @@
       <h2>D2 문제 기술</h2><ul>${c.alerts.map(a => li(`${a.title} — ${a.body || ''} (${a.at || ''})`)).join('')}</ul>
       <h2>D3 봉쇄 조치</h2><ul>${done.filter(a => a.stage === 'contain').map(a => li(`${a.label} → ${c.st.done[a.id].result}`)).join('') || '<li>미실시</li>'}</ul>
       <table><tr><th>LOT</th><th>공정</th><th>수량</th><th>상태</th><th>이유</th></tr>${c.lots.map(l => `<tr><td>${esc(l.id)}</td><td>${esc(M.PROC[l.proc] || l.proc)}</td><td>${f(l.qty, 0)}</td><td>${esc(l.ship.t)}</td><td>${esc(l.why)}</td></tr>`).join('')}</table>
-      <h2>D4 근본 원인</h2>${M.spc && M.spc.caseLines(c).length ? `<p><b>데이터 분석</b></p><ul>${M.spc.caseLines(c).map(li).join('')}</ul>` : ''}${cause ? `<p><b>확정: ${esc(cause.t)}</b> — ${esc(cause.d)}</p>` : '<p>미확정</p>'}<ul>${c.causes.map(x => li(`${x.t} (연관성 ${DX.STRENGTH[x.strength][1]}) — ${x.d}`)).join('')}</ul>
+      <h2>D4 근본 원인 조사</h2>${M.spc && M.spc.caseLines(c).length ? `<p><b>데이터 분석</b></p><ul>${M.spc.caseLines(c).map(li).join('')}</ul>` : ''}${cause ? `<p><b>검토 후보: ${esc(cause.t)}</b> — ${esc(cause.d)} (원인 확정에는 현장 검증 필요)</p>` : '<p>미확정</p>'}<ul>${c.causes.map(x => li(`${x.t} (연관성 ${DX.STRENGTH[x.strength][1]}) — ${x.d}`)).join('')}</ul>
       <h2>D5·D6 시정 조치</h2><ul>${done.filter(a => a.stage === 'fix').map(a => li(`${a.label} → ${c.st.done[a.id].result}`)).join('') || '<li>미실시</li>'}</ul>
       <h2>D7 재발 방지</h2><ul>${done.filter(a => a.stage === 'prevent').map(a => li(`${a.label} → ${c.st.done[a.id].result}`)).join('') || '<li>미실시</li>'}</ul>
       <h2>D8 비용 · 종결</h2><p>실손 ${DX.won(c.money.loss)} · 위험 ${DX.won(c.money.risk)} · 묶임 ${DX.won(c.money.tied)} · 낭비 ${DX.won(c.money.waste)}/일 (계수는 예시값)</p><ul>${c.money.basis.map(li).join('')}</ul>

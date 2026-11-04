@@ -66,7 +66,7 @@
         <tbody>${rows.map(([k, r]) => `<tr><td><b>${esc(pname(k))}</b>${few(k) ? ' <span class="tag j-none">데이터 부족</span>' : ''}</td><td class="n">${f(r.n_eval, 0)}</td><td class="n">${f(r.events, 0)}</td>
           <td class="n ${r.dev_skill < 0 ? 'ng' : ''}">${sgn(r.dev_skill)}</td><td class="n"><b class="${r.gated_skill < 0 ? 'ng' : ''}">${sgn(r.gated_skill)}</b></td>
           <td>${bar(r.gate, r.gate < 0.5 ? 'lo' : '')} <small>${f(r.gate, 2)}</small></td><td class="n">${r.auc != null ? '구분력 ' + f(100 * r.auc, 0) + '점' : '순위상관 ' + f(r.spearman, 2)}</td></tr>`).join('')}</tbody></table></div>
-      <p class="note">값 = 공정 기준율(지금까지의 불량률)보다 예측 오차(포아송 이탈도)를 줄인 비율. 게이트가 0 쪽이면 조건으로 불량이 설명되지 않는 공정 → 기준율로 물러나 예측을 망치지 않습니다.</p></div>
+      <p class="note">값 = 공정 기준율(지금까지의 불량률)보다 예측 오차(포아송 이탈도)를 줄인 비율. 게이트가 낮으면 기준율 예측의 비중을 높입니다. 평가 기간 전체에서 기준율보다 좋은 성능을 보장하지는 않습니다.</p></div>
     <div class="grid g2" style="margin-top:16px">
       <div class="card"><h2>공통 효과 <span class="h2sub">모든 공정이 같이 배운 규칙 · 평소보다 1σ</span></h2>
         <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-n"><col class="c-ci"></colgroup><thead><tr><th>신호</th><th class="n">배수</th><th class="n">90% 구간</th></tr></thead>
@@ -150,56 +150,61 @@
 
   // ── 6. 데이터 진단 (영업 PoC)
   const ROLEKO = { id: '식별자', time: '시간', outcome: '결과(불량)', outcome_detail: '결과 상세', exposure: '수량', category: '범주', param: '공정 조건', setpoint: '설정값', ignore: '제외', text: '메모 · 문장' };
-  const aiUrl = () => (M.cfg && M.cfg.AI_URL) || ((window.MLNG_CONFIG || {}).AI_URL) || ((window.MLNG_CONFIG || {}).SUPABASE_URL || '').replace(/\/$/, '');
+  const aiUrl = () => ((M.cfg && M.cfg.AI_URL) || ((window.MLNG_CONFIG || {}).AI_URL) || ((window.MLNG_RUNTIME || {}).SUPABASE_URL || '')).replace(/\/$/, '');
   async function runDx(file) {
     if (!aiUrl()) { dx.err = 'AI 엔진 서버가 연결되지 않았습니다 (자체 서버 · 설치형에서 사용) — 지금은 데모 결과'; M.render(); return; }
     dx.busy = true; dx.err = ''; M.render();
     try {
-      if (file.size > 5.5e6) throw new Error('파일이 너무 큽니다 (5MB 이하)');
+      if (file.size > 5e6) throw new Error('파일이 너무 큽니다 (5MB 이하)');
+      if (dx.cost && (!Number.isFinite(Number(dx.cost)) || Number(dx.cost) < 0)) throw new Error('불량 1건당 비용을 0 이상의 숫자로 입력하세요');
       const u8 = new Uint8Array(await file.arrayBuffer()); let bin = '';
       for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
       const res = await fetch(aiUrl() + '/ai/v1/diagnose', { method: 'POST', headers: { 'content-type': 'application/json' },   // CSV(UTF-8 · CP949) · 엑셀 그대로 → 서버가 판별
         body: JSON.stringify({ file_b64: btoa(bin), unit_cost: dx.cost ? Number(dx.cost) : null, name: file.name }) });
-      if (!res.ok) throw new Error(res.status === 404 ? 'AI 엔진 서버가 연결되지 않았습니다 (자체 서버 · 설치형에서 사용)' : ((await res.json().catch(() => ({}))).message || res.status));
+      if (!res.ok) throw new Error(res.status === 401 ? '인증된 분석 환경에 연결해야 합니다. 공장 담당자에게 접속 환경을 확인하세요.' : res.status === 404 ? 'AI 엔진 서버가 연결되지 않았습니다 (자체 서버 · 설치형에서 사용)' : ((await res.json().catch(() => ({}))).message || res.status));
       dx.r = await res.json();
     } catch (e) { dx.err = String(e.message || e); }
     dx.busy = false; M.render();
   }
   function vDiag() {
-    const r = dx.r || A.diagnose_sample;
-    if (!r) return '<div class="card" style="margin-top:16px"><div class="empty">진단 결과가 없습니다 — ai/ 에서 python -m mlng_ai train</div></div>';
+    const source = dx.r || A.diagnose_sample;
+    if (!source) return '<div class="card" style="margin-top:16px"><div class="empty">진단 결과가 없습니다 — ai/ 에서 python -m mlng_ai train</div></div>';
+    const unitCost = dx.cost.trim() !== '' && Number.isFinite(Number(dx.cost)) && Number(dx.cost) >= 0 ? Number(dx.cost) : null;
+    const r = Object.assign({}, source, { unit_cost: unitCost, copq: unitCost != null && source.events != null ? { total: source.events * unitCost } : null });
     const q = r.quality, fs = r.factors || [], ai = r.ai || {}, mx = Math.max(1, ...fs.map(x => x.lift)), won = v => f(v, 0) + '원';
-    const head = `<div class="card" style="margin-top:16px"><h2>${esc(r.name)}
-        <span class="more"><label class="btn sm">${dx.busy ? '진단 중…' : '파일 진단 (CSV · 엑셀)'}<input id="xa-dx" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden ${dx.busy ? 'disabled' : ''}></label></span></h2>
-      <div class="xdx-in"><span class="tag ${dx.r ? 'j-ok' : 'j-none'}">${dx.r ? '업로드한 파일' : '데모 결과'}</span><span class="muted">${esc(r.created)}</span><label>부품 단가 <input id="xa-cost" class="inp" inputmode="numeric" value="${esc(dx.cost)}"> 원</label>${dx.err ? `<span class="tag j-warn">${esc(dx.err)}</span>` : ''}${dx.r ? ' <a href="#" data-xa="dxr|1">데모 결과로</a>' : ''}</div>
-      <div class="tbx"><table class="tb xtab xsumt"><thead><tr><th class="n">행</th><th class="n">칼럼</th><th class="n">불량률</th><th class="n">불량 손실</th><th class="n">준비도</th><th>결과 칼럼</th><th>기간</th></tr></thead>
+    const head = `<div class="card" style="margin-top:16px"><h2>${dx.r ? esc(r.name) : '정밀가공 검사 · 공개 데이터 예시'}
+        <span class="more">${aiUrl() ? `<label class="btn sm">${dx.busy ? '진단 중…' : '파일 진단 (CSV · 엑셀)'}<input id="xa-dx" type="file" accept=".csv,.xlsx,.xls,text/csv" hidden ${dx.busy ? 'disabled' : ''}></label>` : '<span class="tag j-none">샘플 보기 · 파일 분석 미연결</span>'}</span></h2>
+      <div class="xdx-in"><span class="tag ${dx.r ? 'j-ok' : 'j-none'}">${dx.r ? '업로드한 파일' : '공개 데이터 데모'}</span><span class="muted">${esc(r.created)}</span><label>불량 1건당 비용 <input id="xa-cost" class="inp" inputmode="decimal" value="${esc(dx.cost)}"> 원 (가정)</label>${dx.err ? `<span class="tag j-warn">${esc(dx.err)}</span>` : ''}${dx.r ? ' <a href="#" data-xa="dxr|1">데모 결과로</a>' : ''}</div>
+      <div class="trace-status"><span class="tag j-warn">원인 미확정</span><span>검토 전 초안</span><details class="ui-details"><summary>분석 기준</summary><p>구간별 연관성을 비교한 조사 자료입니다. 현장 검증 뒤 원인을 확정합니다. 비용은 불량 수 × 입력한 건당 비용이며 실제 절감액이 아닙니다.</p></details></div>
+      <div class="tbx"><table class="tb xtab xsumt"><thead><tr><th class="n">행</th><th class="n">칼럼</th><th class="n">불량률</th><th class="n">불량 비용 추정</th><th class="n">파일 점검</th><th>결과 칼럼</th><th>기간</th></tr></thead>
         <tbody><tr><td class="n">${f(q.rows, 0)}</td><td class="n">${q.cols}</td><td class="n">${r.defect_rate != null ? pct(r.defect_rate, 1) : '—'}</td><td class="n">${r.copq ? won(r.copq.total) : '—'}</td>
           <td class="n">${r.readiness.score} / 100</td><td>${esc(r.outcome || '없음')}</td><td>${q.time_range ? esc(q.time_range.join(' ~ ')) : '—'}</td></tr></tbody></table></div>
       </div>`;
     const fac = `<div class="card" style="margin-top:16px"><h2>불량 원인 후보 <span class="h2sub">칼럼별 구간 불량률 · z ≥ 2</span></h2>
       ${fs.length ? `<div class="tbx"><table class="tb xtab"><colgroup><col class="c-n"><col><col><col class="c-n"><col class="c-n"><col class="c-gate"><col style="width:120px"></colgroup>
-        <thead><tr><th class="n">순위</th><th>칼럼</th><th>나쁜 구간</th><th class="n">구간 불량률</th><th class="n">나머지</th><th>배수</th><th class="n">${r.unit_cost ? '초과 손실' : '초과 불량'}</th></tr></thead>
+        <thead><tr><th class="n">순위</th><th>칼럼</th><th>관측 구간</th><th class="n">구간 불량률</th><th class="n">나머지</th><th>배수</th><th class="n">${r.unit_cost != null ? '차이 수량 × 비용' : '구간 차이 수량'}</th></tr></thead>
         <tbody>${fs.map((x, i) => `<tr><td class="n">${i + 1}</td><td>${esc(x.label)}</td><td class="mono">${esc(x.worst)}</td><td class="n">${pct(x.worst_rate, 1)}</td><td class="n">${pct(x.rest_rate, 1)}</td>
-          <td>${bar(x.lift / mx)} <small>${f(x.lift, 1)}배</small></td><td class="n">${r.unit_cost ? won(x.excess * r.unit_cost) : f(x.excess, 1)}</td></tr>`).join('')}</tbody></table></div>
-      <p class="note">초과 = 그 구간 불량률을 나머지 수준으로 낮췄을 때 줄어드는 양(추정). 상관이며, 인과는 현장 확인.</p>` : '<div class="empty">칼럼 하나만으로 뚜렷한 차이가 없습니다 — 여러 조건이 겹치는 경우는 누적 학습에서 다룹니다.</div>'}</div>`;
+          <td>${bar(x.lift / mx)} <small>${f(x.lift, 1)}배</small></td><td class="n">${r.unit_cost != null ? won(x.excess * r.unit_cost) : f(x.excess, 1)}</td></tr>`).join('')}</tbody></table></div>
+      <details class="ui-details"><summary>산정 근거 · 해석 범위</summary><p>탐색 비교(z ≥ 2, 다중 비교 미보정). 구간 차이 수량 = (구간 불량률 − 나머지 불량률) × 구간 수량. 후보 간 중복되므로 합산할 수 없으며 조치 효과·절감액을 뜻하지 않습니다.</p></details>` : '<div class="empty">유의한 후보 없음 · 표본과 누락 조건 확인 필요</div>'}</div>`;
     const sig = (ai.signals || []).length ? `<div class="card"><h2>AI 신호 <span class="h2sub">학습 0건 · 공통 효과${ai.zero_shot_auc != null ? ' · 구분력 ' + f(100 * ai.zero_shot_auc, 0) + '점' : ''}</span></h2>
       <div class="tbx"><table class="tb xtab"><colgroup><col><col><col class="c-n"></colgroup><thead><tr><th>신호</th><th>주로 나온 칼럼</th><th class="n">평소 대비 (표준편차)</th></tr></thead>
       <tbody>${ai.signals.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.source || '—')}</td><td class="n">+${f(x.gap_sd, 2)}</td></tr>`).join('')}</tbody></table></div></div>` : '';
     const rd = `<div class="card"><h2>데이터 준비도 <span class="h2sub">${r.readiness.score} / 100</span></h2>
       <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-role"><col class="c-n"></colgroup><thead><tr><th>항목</th><th>상태</th><th class="n">배점</th></tr></thead>
-      <tbody>${r.readiness.checks.map(c => `<tr><td>${esc(c.item)}</td><td><span class="tag ${c.ok ? 'j-ok' : 'j-danger'}">${c.ok ? '충족' : '부족'}</span></td><td class="n">${c.weight}</td></tr>`).join('')}</tbody></table></div></div>`;
+      <tbody>${r.readiness.checks.map(c => `<tr><td>${esc(c.item)}</td><td><span class="tag ${c.ok ? 'j-ok' : 'j-danger'}">${c.ok ? '충족' : '부족'}</span></td><td class="n">${c.weight}</td></tr>`).join('')}</tbody></table></div><details class="ui-details"><summary>점검 기준</summary><p>파일의 기본 점검 점수입니다. 모델 성능이나 현장 적용 가능성을 보증하지 않습니다. 결과·수량·단위·측정 시점은 담당자 확인이 필요합니다.</p></details></div>`;
     const cols = `<div class="card" style="margin-top:16px"><h2>칼럼 해석 <span class="h2sub">${r.columns.length}개</span></h2>
       <div class="tbx"><table class="tb xtab"><colgroup><col class="c-col"><col class="c-role"><col class="c-n"><col></colgroup><thead><tr><th>칼럼</th><th>역할</th><th class="n">확신도</th><th>근거</th></tr></thead>
       <tbody>${r.columns.map(c => `<tr><td class="mono">${esc(c.column)}</td><td><span class="tag ${(ROLE[c.role] || ['', 'j-none'])[1]}">${esc(ROLEKO[c.role] || c.role)}</span></td><td class="n">${f(c.confidence, 2)}</td><td class="muted">${esc(c.why)}</td></tr>`).join('')}</tbody></table></div></div>`;
     const d8 = r.report_8d, e8 = d8 && d8.d4.length ? `<div class="card" style="margin-top:16px"><h2>원인 분석 보고서 초안 (8D)</h2>
       <div class="tbx"><table class="tb xtab"><colgroup><col class="c-p3"><col></colgroup><thead><tr><th>항목</th><th>내용</th></tr></thead><tbody>
-        <tr><td>D2 문제</td><td>${f(d8.d2.units, 0)}개 중 불량 ${f(d8.d2.events, 0)}건 (${pct(d8.d2.rate, 1)})${d8.d2.loss ? ' · 손실 ' + won(d8.d2.loss) : ''}</td></tr>
+        <tr><td>D2 문제</td><td>${f(d8.d2.units, 0)}개 중 불량 ${f(d8.d2.events, 0)}건 (${pct(d8.d2.rate, 1)})${r.copq ? ' · 비용 추정 ' + won(r.copq.total) : ''}</td></tr>
         ${d8.d4.map((x, i) => `<tr><td>D4 원인 후보 ${i + 1}</td><td>${esc(x.column)} <span class="mono">${esc(x.worst)}</span> — 불량률 ${pct(x.worst_rate, 1)}, 나머지의 ${f(x.lift, 1)}배</td></tr>`).join('')}
-        ${d8.d5.map((x, i) => `<tr><td>D5 대책 ${i + 1}</td><td>${esc(x.action)}</td></tr>`).join('')}
-        ${d8.goal_rate != null ? `<tr><td>D6 목표</td><td>불량률 ${pct(r.defect_rate, 1)} → ${pct(d8.goal_rate, 1)} (1순위 원인 해소 시 추정)</td></tr>` : ''}
-        ${d8.d7.map(t => `<tr><td>D7 재발 방지</td><td>${esc(t)}</td></tr>`).join('')}</tbody></table></div>
-      <p class="note">데이터로 채울 수 있는 칸만 자동 작성 · D1 팀 · D3 임시 조치 · D8 종결은 담당자가 작성</p></div>` : '';
-    return head + e8 + fac + `<div class="grid g2" style="margin-top:16px">${sig || ''}${rd}</div>` + cols;
+        ${d8.d4.map((x, i) => `<tr><td>D5 확인 계획 ${i + 1}</td><td>«${esc(x.column)}» ${esc(x.worst)} 구간의 품목·설비·작업 이력을 비교. 운전 조건 변경은 공정 담당자 승인 후 검증</td></tr>`).join('')}
+        <tr><td>D6 효과 검증</td><td>같은 품목·설비의 별도 기간 또는 승인된 비교 시험으로 확인. 불량 감소 목표·절감액은 검증 후 확정</td></tr>
+        <tr><td>D7 재발 방지</td><td>검증된 원인과 승인된 조치를 작업 표준에 반영하고 재발 여부를 확인</td></tr></tbody></table></div>
+      <p class="trace-caption">담당자 검토 전 초안 · D1 팀 구성, D3 임시 조치, 원인 확정·대책 승인·효과 검증, D8 종결은 현장에서 작성합니다.</p></div>` : '';
+    return head + fac + (e8 ? `<details class="ui-fold" id="trace-report"><summary>8D 보고서 초안 <span class="tag j-warn">검토 대기</span></summary>${e8}</details>` : '')
+      + `<details class="ui-fold"><summary>데이터 점검 · AI 분석 근거</summary><div class="grid g2" style="margin-top:16px">${sig || ''}${rd}</div>${cols}</details>`;
   }
 
   const V = {};
@@ -214,7 +219,7 @@
   const wrap = fn => () => { load(); if (err) return `<div class="card"><div class="empty">${esc(err)}</div></div>`;
     if (!A) return '<div class="card"><div class="empty">불러오는 중…</div></div>'; return fn(); };
   V.tx_report = wrap(vDiag);
-  V.tx_lots = wrap(() => { const h = vTrace(), i = h.indexOf('<div class="card" style="margin-top:16px"><h2>원인 추적 검증'); return i > 0 ? h.slice(0, i) : h; });
+  V.tx_lots = wrap(() => { const h = vTrace(), i = h.indexOf('<div class="card" style="margin-top:16px"><h2>원인 추적 검증'); return '<div class="trace-status"><span class="tag j-warn">데모 연결</span><span>공정 간 원인 미검증</span><details class="ui-details"><summary>데이터 출처</summary><p>서로 다른 공개 데이터의 LOT을 연결한 예시입니다. 실제 공장의 공정 간 원인이나 현장 성능을 검증한 결과가 아닙니다.</p></details></div>' + (i > 0 ? h.slice(0, i) : h); });
   M.aiModel = () => A;
   M.mod({
     id: 'xai', group: '분석', order: 5.7,
@@ -225,7 +230,7 @@
       if (ta) ta.oninput = () => { memo = ta.value; const pos = ta.selectionStart; M.render(); const t2 = document.querySelector('#xa-memo'); if (t2) { t2.focus(); t2.setSelectionRange(pos, pos); } };
       const fi = root.querySelector('#xa-dx'), co = root.querySelector('#xa-cost');
       if (fi) fi.onchange = () => { if (fi.files && fi.files[0]) runDx(fi.files[0]); };
-      if (co) co.onchange = () => { dx.cost = co.value.replace(/[^0-9.]/g, ''); };
+      if (co) co.onchange = () => { dx.cost = co.value.trim(); M.render(); };
       root.querySelectorAll('[data-xa]').forEach(b => b.onclick = e => { e.preventDefault(); const s = b.dataset.xa, i = s.indexOf('|');
         if (s === 'dxr|1') { dx.r = null; dx.err = ''; } else st[s.slice(0, i)] = s.slice(i + 1); M.render(); }); },
   });

@@ -8,10 +8,10 @@
 window.MLNG_CONFIG = {
   SUPABASE_URL: 'https://vwgfeutvcvogutxuhcxt.supabase.co',   // MILG MES 전용 프로젝트
   SUPABASE_ANON_KEY: 'sb_publishable_7FxcyivB8vrrJJdrWTSl9g_FZUiEV17',   // Publishable key (공개용)
-  // 공정 통합 AI 엔진 주소 (데이터 진단 업로드) — 비우면 SUPABASE_URL 을 쓴다 (자체 서버에서는 같은 주소)
+  // 공정 통합 AI 엔진 주소 (데이터 진단 업로드) — 미설정 시 공개 데모는 파일 전송하지 않음. 자체 서버는 runtime 주소 사용.
   AI_URL: '',
   // 첫 화면 — 'tx_report' = 불량 원인 분석 보고서 (MILG Trace) · 'overview' = 종합 현황
-  START_VIEW: 'tx_report',
+  START_VIEW: 'overview',
 
   // 아직 이 셸에 합치지 않은 모듈 — 공정 흐름에서 누르면 새 탭으로 연다 (비우면 링크 없음)
   LINKS: {

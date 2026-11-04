@@ -23,6 +23,12 @@
   --r:8px;--r-sm:6px;color-scheme:light;
 }
 *{box-sizing:border-box}
+.trace-status{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px 12px;margin:12px 0;color:var(--muted);font-size:12px;line-height:1.6}
+.trace-status b{color:var(--warn-ink)}
+.trace-caption{margin:12px 0 0;color:var(--muted);font-size:12px;line-height:1.7}
+.ui-details{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.7}.ui-details summary,.ui-fold > summary{cursor:pointer;color:var(--ink-2);font-weight:600}.ui-details p{margin:8px 0}.trace-status .ui-details{margin:0;flex:1;min-width:140px}
+.ui-fold{margin-top:16px;border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;background:var(--surface)}.ui-fold > summary{font-size:13px}.ui-fold > summary .tag{margin-left:8px}.ui-fold > .card{margin-top:12px!important}.ui-fold > .grid > .card{margin-top:0!important}
+.issue-table{min-width:800px}.issue-table td{height:42px}.issue-table tr.selected td{background:var(--brand-soft)}.issue-table tbody tr:hover td{background:var(--line-2)}
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--ink);
   font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,sans-serif;
@@ -30,7 +36,7 @@ body{background:var(--bg);color:var(--ink);
 button{font:inherit}
 a{color:var(--accent)}
 
-#app{display:grid;grid-template-columns:268px 1fr;height:100vh}
+#app{display:grid;grid-template-columns:224px minmax(0,1fr);height:100vh}
 #main{display:flex;flex-direction:column;min-width:0;min-height:0}
 
 /* ── 왼쪽 기둥 (MES 와 같은 구조) */
@@ -65,7 +71,7 @@ a{color:var(--accent)}
 .mode.live{border-color:var(--ok-line);background:var(--ok-soft);color:var(--ok)}
 .mode.demo{border-color:var(--warn-line);background:var(--warn-soft);color:var(--warn-ink)}
 
-#view{flex:1;min-height:0;overflow:auto;padding:24px 30px 40px}
+#view{flex:1;min-height:0;overflow:auto;padding:20px 22px 32px}
 
 /* ── 공통 블록 */
 .grid{display:grid;gap:16px}
@@ -814,7 +820,7 @@ ul.plain.cbasis{font-size:12px;color:var(--ink-2);margin:8px 0 0;padding-left:16
 .dgrid > .card .chart{flex:1}
 @media(max-width:1100px){.dgrid{grid-template-columns:minmax(0,1fr)}}
 /* 주문 현황판 */
-.mtx{table-layout:fixed;width:100%;min-width:1040px}
+.mtx{table-layout:fixed;width:100%;min-width:860px}.mtx.mtx-wide{min-width:1040px}
 .mtx col.c-id{width:150px}.mtx col.c-qty{width:92px}.mtx col.c-due{width:76px}.mtx col.c-st{width:auto}.mtx col.c-state{width:92px}.mtx col.c-iss{width:24%}
 .mtx th.sth{text-align:center;cursor:pointer;user-select:none;white-space:nowrap}
 .mtx th.sth:hover{color:var(--ink)}.mtx th.sth.on{color:var(--brand);box-shadow:inset 0 -2px 0 var(--brand)}
@@ -1148,3 +1154,7 @@ ul.plain.cbasis{font-size:12px;color:var(--ink-2);margin:8px 0 0;padding-left:16
 .xdx-in .inp{width:96px;padding:4px 8px;border:1px solid var(--line-in);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font:inherit;text-align:right}
 .xsumt td{font-size:15px;font-weight:650}
 .xnext{margin:10px 0 0;padding-left:20px;font-size:13.5px;line-height:1.6}
+
+/* 업무 화면: 좁은 데스크톱에서 KPI 제목을 자르지 않는다. */
+@media(min-width:761px) and (max-width:1400px){.kstrip.kbar.dashboard-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.dashboard-kpis > .kpi:nth-child(4){border-left:0}.dashboard-kpis > .kpi:nth-child(n+4){border-top:1px solid var(--line)}}
+.cdet > h2{flex-wrap:wrap;gap:8px}.cdet > h2 .more{display:flex;gap:6px;flex-wrap:wrap}

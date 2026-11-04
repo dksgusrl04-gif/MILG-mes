@@ -1,11 +1,11 @@
 /* 자동 생성 — tools/stamp_version.py. 손으로 고치지 않는다 */
 window.MLNG_BUILD = {
- "hash": "f757119ec960ffa2417f3e79ed8cc12e5cde00dc827d5545a12ee5e8451d3fa9",
+ "hash": "e020b4b93b02a4573c35ebf7b60ea629dbd1f7d623b5c4795f2ee9ed16771eaa",
  "files": {
   "js/runtime.js": "278a8aece5a7e153",
-  "js/config.js": "fb418eac01cbb7b8",
+  "js/config.js": "cc588350eb35c6a6",
   "js/data.js": "5019365efa45e597",
-  "js/core.js": "113fc4b34ef99847",
+  "js/core.js": "9524facb759e3b1e",
   "js/xlsx.js": "d0769185ddecb37b",
   "js/mod_common.js": "69c2fc97d82d1160",
   "js/mod_line.js": "c80254288d11c84d",
@@ -31,7 +31,7 @@ window.MLNG_BUILD = {
   "js/models.js": "a2496b01b30d0dc4",
   "js/prove.js": "74e70e185ff78b05",
   "js/mod_gate.js": "46f5dcbf732b08ae",
-  "js/mod_case.js": "fe729a25bfb56f1d",
+  "js/mod_case.js": "3f74ae5a4c9adbb7",
   "js/mod_cost.js": "f2cebb1716c11f96",
   "js/mod_whatif.js": "91aeac3c05d62908",
   "js/mod_replay.js": "176883e408ad2b9d",
@@ -44,9 +44,9 @@ window.MLNG_BUILD = {
   "js/mod_report.js": "95b952f682b77e92",
   "js/mod_assume.js": "4100619fabecf235",
   "js/mod_spc.js": "ae3fef41dffa8ad4",
-  "js/mod_ai.js": "6830649db8f42300",
-  "js/mod_flow.js": "acc7cbe6ef459d95",
+  "js/mod_ai.js": "a63bd5b2c9ba119c",
+  "js/mod_flow.js": "4ea791b81444d44b",
   "js/boot.js": "ff48c44de6b1a781",
-  "css/style.css": "615346ca18e7f396"
+  "css/style.css": "53c93e0864138eb6"
  }
 };

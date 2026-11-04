@@ -208,9 +208,9 @@ def diagnose(df: pd.DataFrame, meta: dict | None = None, unit_cost: float | None
         f = fs[0]
         nxt.append(f"«{f['label']}» {f['worst']} 구간의 불량률이 나머지의 {f['lift']:.1f}배 — 현장에서 이 구간의 작업 조건을 먼저 확인")
     if res['readiness']['score'] < 70:
-        nxt.append('부족한 항목(아래 준비도)을 채우면 공정 간 누적 학습 · 실시간 예측으로 넘어갈 수 있습니다.')
+        nxt.append('부족한 항목을 보완한 뒤 결과 칼럼·수량·단위·측정 시점을 현장 담당자와 확인하세요.')
     else:
-        nxt.append('데이터 준비도가 충분합니다 — 실시간 예측 · 공정 간 원인 추적(누적 학습)으로 바로 연결할 수 있습니다.')
+        nxt.append('파일의 기본 점검 항목을 충족했습니다. 현장 담당자의 칼럼 확인과 별도 기간 검증 뒤 적용 범위를 결정하세요. 준비도 점수는 예측 성능을 뜻하지 않습니다.')
     res['next'] = nxt
     res['report_8d'] = eight_d(res)
     return res
@@ -232,16 +232,15 @@ def eight_d(r: dict) -> dict | None:
         best = min(f['levels'], key=lambda x: x['rate'])
         d4.append({'column': f['label'], 'worst': f['worst'], 'worst_rate': f['worst_rate'], 'rest_rate': f['rest_rate'], 'lift': f['lift'], 'z': f['z'],
                    'excess': f['excess']})
-        d5.append({'column': f['label'], 'avoid': f['worst'], 'target': best['level'], 'target_rate': best['rate'],
-                   'action': f"«{f['label']}» 를 {best['level']} 구간으로 관리 ({f['worst']} 구간 진입 시 경보)" if f['kind'] == 'numeric'
-                   else f"«{f['label']}» = {f['worst']} 조건의 작업 표준 · 설비 상태 점검"})
-        d6.append({'column': f['label'], 'metric': '해당 구간 불량률', 'before': f['worst_rate'], 'goal': f['rest_rate']})
+        d5.append({'column': f['label'], 'avoid': f['worst'], 'target': None, 'target_rate': None,
+                   'comparison_level': best['level'], 'comparison_rate': best['rate'],
+                   'action': f"«{f['label']}» {f['worst']} 구간의 품목·설비·작업 이력을 비교하고 원인 가설을 확인. 운전 조건은 공정 담당자 승인 후 검증"})
+        d6.append({'column': f['label'], 'metric': '해당 구간 불량률', 'before': f['worst_rate'], 'goal': None,
+                   'comparison_rate': f['rest_rate'], 'plan': '같은 품목·설비의 별도 기간 또는 승인된 비교 시험으로 재검증'})
     sig = [s['name'] + (f" ({s['source']})" if s.get('source') else '') for s in ((r.get('ai') or {}).get('signals') or [])[:3]]
-    goal = None
-    if fs and r.get('events'):
-        goal = max(r['events'] - fs[0]['excess'], 0) / max(r.get('units') or 1, 1)
-    return {'d2': d2, 'd4': d4, 'd4_ai': sig, 'd5': d5, 'd6': d6, 'goal_rate': goal,
-            'd7': ['원인 칼럼의 관리 범위를 MES 관리 한계로 등록', '실시간 위험도 감시 (MILG 예측 API) — 구간 진입 시 작업자 알림', '대책 후 데이터로 누적 학습 → 원인 재확인'],
+    return {'d2': d2, 'd4': d4, 'd4_ai': sig, 'd5': d5, 'd6': d6, 'goal_rate': None,
+            'status': '원인 미확정 · 현장 검증 필요',
+            'd7': ['검증된 원인과 승인된 조치만 작업 표준에 반영', '조치 전후의 품목·설비·생산량·불량 수를 기록', '재발 여부와 실제 비용 변화를 담당자가 확인한 뒤 종결'],
             'manual': ['D1 팀 구성', 'D3 임시 조치 (격리 · 전수 검사)', 'D8 종결 · 승인']}
 
 
@@ -267,14 +266,15 @@ def render_html(r: dict, brand: str = 'MILG') -> str:
     pct = lambda v: '-' if v is None else f'{v * 100:.1f}%'   # noqa: E731
     k = [('행', f"{q['rows']:,}"), ('칼럼', f"{q['cols']}"), ('불량률', pct(r.get('defect_rate'))), ('준비도', f"{r['readiness']['score']} / 100")]
     if r.get('copq'):
-        k.insert(3, ('불량 손실', f"{r['copq']['total']:,.0f}원"))
+        k.insert(3, ('불량 비용 추정', f"{r['copq']['total']:,.0f}원"))
     out = [f"<!doctype html><html lang='ko'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>",
            f"<title>{e(brand)} 데이터 진단</title><style>{CSS}</style></head><body><div class='wrap'>",
            f"<div class='sub'>{e(brand)} 데이터 진단 리포트 · {e(r['created'])}</div><h1>{e(r['name'])}</h1>",
            f"<div class='sub'>기간 {e(' ~ '.join(q['time_range'])) if q.get('time_range') else '-'} · 결과 칼럼 {e(r['outcome'] or '없음')}</div>",
            "<table class='sum'><tr>" + ''.join(f'<th>{e(a)}</th>' for a, _ in k) + '</tr><tr>' + ''.join(f'<td>{e(b)}</td>' for _, b in k) + '</tr></table>']
     out.append('<h2>요약 · 다음 할 일</h2><ol>' + ''.join(f'<li>{e(t)}</li>' for t in r.get('next', [])) + '</ol>')
-    d = r.get('report_8d')
+    out.append("<p>탐색적 연관 분석 · 원인 미확정. 비용은 불량 수 × 입력한 건당 비용이며 실제 절감액이 아닙니다.</p>")
+    d = eight_d(r)
     if d and d['d4']:
         d2 = d['d2']
         out.append("<h2>원인 분석 보고서 초안 (8D)</h2><table><tr><th>항목</th><th>내용</th></tr>"
@@ -284,8 +284,7 @@ def render_html(r: dict, brand: str = 'MILG') -> str:
                              for i, x in enumerate(d['d4'], 1))
                    + (f"<tr><td>D4 AI 신호</td><td>{e(' · '.join(d['d4_ai']))}</td></tr>" if d['d4_ai'] else '')
                    + ''.join(f"<tr><td>D5 대책 후보 {i}</td><td>{e(x['action'])}</td></tr>" for i, x in enumerate(d['d5'], 1))
-                   + ''.join(f"<tr><td>D6 검증 지표 {i}</td><td>{e(x['column'])} 구간 불량률 {pct(x['before'])} → 목표 {pct(x['goal'])} 이하</td></tr>" for i, x in enumerate(d['d6'], 1))
-                   + (f"<tr><td>D6 전체 목표</td><td>불량률 {pct(r.get('defect_rate'))} → {pct(d['goal_rate'])} (1순위 원인 해소 시 추정)</td></tr>" if d.get('goal_rate') is not None else '')
+                   + ''.join(f"<tr><td>D6 검증 계획 {i}</td><td>{e(x['column'])}: {e(x['plan'])}. 현재 구간 {pct(x['before'])}, 나머지 {pct(x['comparison_rate'])} (관측값). 목표·절감액은 검증 후 확정</td></tr>" for i, x in enumerate(d['d6'], 1))
                    + ''.join(f"<tr><td>D7 재발 방지</td><td>{e(t)}</td></tr>" for t in d['d7'])
                    + f"<tr><td>사람이 작성</td><td>{e(' · '.join(d['manual']))}</td></tr></table>"
                    "<div class='note'>데이터로 채울 수 있는 칸만 자동 작성. 원인은 후보이며 현장 확인 뒤 확정합니다.</div>")
@@ -293,14 +292,14 @@ def render_html(r: dict, brand: str = 'MILG') -> str:
     if fs:
         mx = max(f['lift'] for f in fs)
         out.append("<h2>불량 원인 후보</h2><table><tr><th>순위</th><th>칼럼</th><th>나쁜 구간</th><th class='n'>구간 불량률</th><th class='n'>나머지</th><th class='n'>배수</th><th></th>"
-                   + ("<th class='n'>초과 손실</th>" if r.get('unit_cost') else "<th class='n'>초과 불량</th>") + '</tr>')
+                   + ("<th class='n'>구간 차이 비용 환산</th>" if r.get('unit_cost') else "<th class='n'>구간 차이 수량</th>") + '</tr>')
         for i, f in enumerate(fs, 1):
             ex = f"{f['excess'] * r['unit_cost']:,.0f}원" if r.get('unit_cost') else _fmt(f['excess'])
             out.append(f"<tr><td>{i}</td><td>{e(f['label'])}</td><td>{e(f['worst'])}</td><td class='n'>{pct(f['worst_rate'])}</td><td class='n'>{pct(f['rest_rate'])}</td>"
                        f"<td class='n'>{f['lift']:.1f}×</td><td><div class='bar'><i style='width:{100 * f['lift'] / mx:.0f}%'></i></div></td><td class='n'>{ex}</td></tr>")
-        out.append("</table><div class='note'>칼럼 하나씩 구간별 불량률을 비교해 우연보다 큰 차이(z ≥ 2)만 표시. 초과 = 그 구간 불량률을 나머지 수준으로 낮췄을 때 줄어드는 양(추정). 상관이며 인과 확인은 현장 검증 필요.</div>")
+        out.append("</table><p>칼럼별 탐색 비교(z ≥ 2, 다중 비교 미보정)입니다. 구간 차이는 (해당 구간 불량률 − 나머지 불량률) × 구간 수량. 후보 간 중복되므로 합산할 수 없으며, 조치 효과나 절감액을 예측하지 않습니다.</p>")
     elif r['outcome']:
-        out.append("<h2>불량 원인 후보</h2><div class='note'>칼럼 하나만으로 뚜렷한 차이가 보이지 않았습니다 — 여러 조건이 겹치는 경우로, 공정 간 누적 학습에서 다룹니다.</div>")
+        out.append("<h2>불량 원인 후보</h2><div class='note'>이 분석에서 뚜렷한 차이를 찾지 못했습니다. 표본·누락된 조건·품목 구성을 확인해야 하며 원인이 없다는 뜻은 아닙니다.</div>")
     ai = r.get('ai') or {}
     if ai.get('signals'):
         za = ai.get('zero_shot_auc')
@@ -331,5 +330,5 @@ def render_html(r: dict, brand: str = 'MILG') -> str:
         dq.append(f"중복 행 {q['duplicate_rows']:,}개")
     if dq:
         out.append("<div class='note'>" + e(' · '.join(dq)) + '</div>')
-    out.append(f"<div class='note' style='margin-top:32px'>{e(brand)} Engine · 이 리포트는 받은 파일 안에서만 계산했으며 데이터를 외부로 보내지 않습니다.</div></div></body></html>")
+    out.append(f"<div class='note' style='margin-top:32px'>{e(brand)} Trace · 분석 대상은 제출된 파일입니다. 데이터 처리·보관 범위는 계약된 실행 환경의 정책을 따릅니다.</div></div></body></html>")
     return ''.join(out)

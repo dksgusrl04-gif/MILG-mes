@@ -23,6 +23,19 @@ const ok = (c, m) => { if (c) pass++; else fails.push(m); console.log(`${c ? '�
   await p.goto(url); await p.waitForFunction(() => window.MLNGTrust && MLNGTrust.ready, null, { timeout: 60000 }); await p.waitForTimeout(300);
   const W = ms => p.waitForTimeout(ms || 300), go = k => p.evaluate(k => MLNG.nav(k), k), ev = fn => p.evaluate(fn);
   const note = () => p.evaluate(() => [...document.querySelectorAll('#view .note')].map(n => n.innerText).join(' | '));
+  ok(await ev(() => MLNG.cur === 'overview' && document.querySelector('#nav .nmain button').dataset.k === 'overview'), 'MES는 종합 현황에서 시작');
+
+  // 관측된 상관을 운전 처방이나 확정된 절감액으로 표시하지 않는다.
+  await go('tx_report'); await W();
+  ok(await ev(() => /원인 미확정/.test(document.querySelector('#view').innerText) && !/1순위 원인 해소 시/.test(document.querySelector('#view').innerText)), '진단은 원인 후보 · 검증 전 목표를 확정하지 않음');
+  ok(await ev(() => !document.querySelector('#xa-dx')), '분석 서버가 없는 공개 데모는 파일 업로드를 제공하지 않음');
+  await p.fill('#xa-cost', '20000'); await p.locator('#xa-cost').press('Tab'); await W();
+  ok(await ev(() => document.querySelector('#view').innerText.includes('1,980,000원')), '건당 비용 변경 → 불량 99건의 비용 환산 갱신');
+  await p.fill('#xa-cost', '0'); await p.locator('#xa-cost').press('Tab'); await W();
+  ok(await ev(() => document.querySelector('#view .xsumt').innerText.includes('0원')), '비용 0원은 미입력과 구분');
+  await p.fill('#xa-cost', '15000'); await p.locator('#xa-cost').press('Tab'); await W();
+  await go('tx_lots'); await W();
+  ok(await ev(() => /공정 간 원인 미검증/.test(document.querySelector('#view').innerText)), 'LOT 연결 시연의 검증 범위 표시');
 
   // 2.0 신뢰 계층
   await go('net_ledger'); await W(); await p.click('#lg-verify'); await W(800); ok(/모두 사슬과 서명이 맞습니다/.test(await note()), '원장 전체 검증');
@@ -121,12 +134,14 @@ const ok = (c, m) => { if (c) pass++; else fails.push(m); console.log(`${c ? '�
   await p.click('[data-xa="tab|raw"]'); await W(300); ok(await ev(() => /적산/.test(document.querySelector('#view').innerText) && !!document.querySelector('#xa-memo')), '적산 · 비정형 화면');
   await p.fill('#xa-memo', '주축 소음 있고 진동 느낌'); await W(300); ok(await ev(() => document.querySelectorAll('.xmemo-out mark').length >= 2), '메모 이상 징후 단어 표시');
   await p.click('[data-xa="tab|dx"]'); await W(300);
-  ok(await ev(() => /불량 원인 후보/.test(document.querySelector('#view').innerText) && /데모 결과/.test(document.querySelector('#view').innerText)), '데이터 진단 — 데모 결과');
-  ok(await ev(() => [...document.querySelectorAll('#view .xtab')].some(t => /나쁜 구간/.test(t.innerText) && t.querySelectorAll('tbody tr').length >= 3)), '데이터 진단 — 원인 후보 표');
-  ok(await ev(() => /원인 분석 보고서 초안 \(8D\)/.test(document.querySelector('#view').innerText) && /D5 대책/.test(document.querySelector('#view').innerText)), '데이터 진단 — 8D 보고서 초안');
+  ok(await ev(() => /불량 원인 후보/.test(document.querySelector('#view').innerText) && /공개 데이터 데모/.test(document.querySelector('#view').innerText)), '데이터 진단 — 데모 결과');
+  ok(await ev(() => [...document.querySelectorAll('#view .xtab')].some(t => /관측 구간/.test(t.innerText) && t.querySelectorAll('tbody tr').length >= 3)), '데이터 진단 — 원인 후보 표');
+  ok(await ev(() => !document.querySelector('#trace-report').open), '8D 초안은 기본 접힘');
+  await p.click('#trace-report > summary');
+  ok(await ev(() => /원인 분석 보고서 초안 \(8D\)/.test(document.querySelector('#view').innerText) && /D5 확인 계획/.test(document.querySelector('#view').innerText)), '데이터 진단 — 8D 보고서 초안');
   await p.route('**/ai/v1/diagnose', async r => { const b = JSON.parse(r.request().postData() || '{}'); const s = await p.evaluate(() => MLNG.aiModel().diagnose_sample);
     await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...s, name: b.name, unit_cost: b.unit_cost }) }); });
-  await p.evaluate(() => { window.MLNG_CONFIG.AI_URL = 'https://ai.mlng.test'; });
+  await p.evaluate(() => { window.MLNG_CONFIG.AI_URL = 'https://ai.mlng.test'; MLNG.render(); });
   await p.setInputFiles('#xa-dx', { name: '고객사_라인2.csv', mimeType: 'text/csv', buffer: Buffer.from('온도,NG\n850,0\n870,1\n') }); await W(800);
   ok(await ev(() => /고객사_라인2\.csv/.test(document.querySelector('#view').innerText) && /업로드한 파일/.test(document.querySelector('#view').innerText)), '데이터 진단 — CSV 업로드 → 서버 진단');
   await p.unroute('**/ai/v1/diagnose'); await p.evaluate(() => { window.MLNG_CONFIG.AI_URL = ''; });

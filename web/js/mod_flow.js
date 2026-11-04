@@ -144,7 +144,7 @@
   const cellH = x => `<div class="mc ${x.c}">${x.v != null && x.v < 1 ? `<i style="width:${Math.round(x.v * 100)}%"></i>` : ''}<b>${esc(x.t)}</b>${x.s ? `<em>${esc(x.s)}</em>` : ''}</div>`;
   function board(os, S, opt = {}) {
     if (!os.length) return `<div class="empty">${opt.empty || '해당 주문이 없습니다'}</div>`;
-    return `<div class="tbx"><table class="tb mtx"><colgroup><col class="c-id"><col class="c-qty"><col class="c-due">${STAGE.map(() => '<col class="c-st">').join('')}<col class="c-state">${opt.issue ? '<col class="c-iss">' : ''}</colgroup>
+    return `<div class="tbx"><table class="tb mtx ${opt.issue ? 'mtx-wide' : ''}"><colgroup><col class="c-id"><col class="c-qty"><col class="c-due">${STAGE.map(() => '<col class="c-st">').join('')}<col class="c-state">${opt.issue ? '<col class="c-iss">' : ''}</colgroup>
       <thead><tr><th>수주 번호 · 고객</th><th class="n">수주 수량</th><th>납기</th>${STAGE.map(s => { const x = S && S[s.k];
         return `<th class="sth ${sel === s.k ? 'on' : ''}" ${S ? `data-fsel="${s.k}" title="${esc(x ? x.lab + ' ' + x.big + x.unit : '')}"` : ''}>${s.t}${x && x.n ? `<span class="sn ${x.lv}">${x.n}</span>` : ''}</th>`; }).join('')}<th>진행 상태</th>${opt.issue ? '<th>이슈 사항</th>' : ''}</tr></thead>
       <tbody>${os.map(o => { const c = cells(o);
@@ -176,7 +176,7 @@
       const eqId = (M.S.masters.routings.find(r => r.proc === p) || {}).equipment_id || '';
       return { p, nm, go, eqId, sm, a, st }; };
     const pr = PROCS.map(procRow);
-    return `<div class="kstrip kbar">
+    return `<div class="kstrip kbar dashboard-kpis">
       ${kpi('금일 생산 실적', man(today), '개', `일 필요량 ${man(need)}개 · ${today >= need ? '충족' : '미달'}`, today < need ? 'warn' : '', 'heat_lots')}
       ${kpi('진행 수주', active.length, '건', `납기 지연 ${late} · 지연 우려 ${active.filter(o => o.status === 'warn').length}`, late ? 'danger' : '', 'orders')}
       ${kpi('납기 준수율 (예상)', pct(onTime, 0), '', '진행 수주 중 정상 진행', onTime < 0.8 ? 'warn' : '', 'orders')}
@@ -185,7 +185,7 @@
       ${kpi('미결 품질 이슈' + (M.asmTag ? M.asmTag('loss') : ''), cs.length, '건', DX ? `예상 손실 ${DX.wonShort(cs.reduce((t, c) => t + (c.money ? c.money.won : 0), 0))}원` : '', cs.some(c => c.level === 'danger') ? 'danger' : '', 'cases')}
     </div>
     <div class="card dsec"><h2>수주별 진행 현황 <span class="h2sub">${ords.length}건</span>${sel ? `<span class="fchip">${SN[sel]} 단계만 <button data-fsel="">×</button></span>` : ''}<a class="more" href="#" data-go="orders">수주 현황 →</a></h2>
-      ${board(ords, S, { issue: true, empty: sel ? `${SN[sel]} 단계에 해당하는 수주가 없습니다` : '진행 중인 수주가 없습니다' })}</div>
+      ${board(ords, S, { issue: false, empty: sel ? `${SN[sel]} 단계에 해당하는 수주가 없습니다` : '진행 중인 수주가 없습니다' })}</div>
     <div class="dgrid">
       <div class="card"><h2>일별 생산 실적 <span class="h2sub">최근 14 가동일</span><a class="more" href="#" data-go="heat_lots">작업 실적 →</a></h2>
         ${M.barChart(days.map(d => ({ x: d.d.slice(5), v: d.v, t: `${d.d} · ${f(d.v, 0)}개` })), { h: 236, ref: need, refLabel: `일 필요량 ${man(need)}` })}

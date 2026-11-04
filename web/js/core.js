@@ -163,7 +163,6 @@
   // ── 메뉴: 주문 → 자재 → 생산 → 품질 → 출하 흐름대로 7개. 화면은 메뉴 안의 탭, 세부는 작은 탭.
   //   모듈이 만든 화면 중 여기 없는 것은 «더보기» 아래로 자동으로 들어간다 (아무 화면도 잃지 않는다).
   M.NAV = [
-    { id: 'tx', t: '불량 원인 분석', i: 'spark', tabs: [['tx_report', '원인 분석 보고서'], ['tx_lots', '불량 LOT 추적']] },
     { id: 'home', t: '대시보드', i: 'home', tabs: [['overview', '종합 현황'], ['alerts', '알람 이력'], ['shift', '교대 인수인계']] },
     { id: 'order', t: '수주', i: 'deal', tabs: [['orders', '수주 현황'], ['deal_home', '고객 발주 · 납품']] },
     { id: 'mat', t: '자재 · 구매', i: 'cart', tabs: [['buy_home', '구매 요청'], ['buy_orders', '발주 승인']] },
@@ -178,6 +177,7 @@
       ['mach_home', 'MCT 가공', [['mach_home', '현황'], ['mach_tools', '공구 수명'], ['mach_cond', '가공 조건']]]] },
     { id: 'equip', t: '설비 · OEE', i: 'gauge', tabs: [['oee', 'OEE 현황'], ['downtime', '비가동 관리']] },
     { id: 'qual', t: '품질', i: 'check', tabs: [['cases', '품질 이슈'], ['spc', 'SPC 관리도'], ['capa', '공정능력'], ['strat', '불량 층별 분석'], ['insp_home', '검사', [['insp_home', '현황'], ['insp_parts', '부품 이력'], ['insp_signal', '가공 신호']]], ['trace', 'LOT 추적'], ['pass_home', '품질 성적서']] },
+    { id: 'tx', t: '불량 원인 분석', i: 'spark', tabs: [['tx_report', '원인 분석 보고서'], ['tx_lots', '불량 LOT 추적']] },
     { id: 'ship', t: '출하', i: 'gate', tabs: [['gate', '출하 승인']] },
   ];
   M.NAV_MORE = [
@@ -371,7 +371,12 @@
   M.start = async () => {
     if (D.needLogin()) { $('#login').style.display = 'flex'; return; }
     $('#login').style.display = 'none';
-    try { M.S = await D.load(); } catch (e) { $('#view').innerHTML = `<div class="empty">데이터를 불러오지 못했습니다 — ${esc(e.message)}</div>`; return; }
+    $('#view').innerHTML = '<div class="empty" role="status">데이터를 불러오는 중입니다…</div>';
+    try { M.S = await D.load(); } catch (e) {
+      $('#view').innerHTML = `<div class="empty" role="alert">데이터를 불러오지 못했습니다 — ${esc(e.message)}<p><button id="data-retry" class="btn">다시 불러오기</button></p></div>`;
+      $('#data-retry').onclick = () => M.start();
+      return;
+    }
     lastPull = D.LIVE ? new Date() : null; rail(); M.render(); setLive(liveOn);
     // 2.0 신뢰 계층(키 생성·서명)은 첫 화면을 그린 뒤 이어서 준비 — 끝나면 다시 그린다
     if (window.MLNGTrust) window.MLNGTrust.init().then(() => { rail(); M.render(); }).catch(e => console.warn('[trust]', e));
