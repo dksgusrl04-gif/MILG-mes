@@ -15,7 +15,7 @@
   const dx = { r: null, busy: false, err: '', cost: '15000' };
   const load = () => {
     if (A || loading) return;
-    loading = fetch('data/ai_model.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : Promise.reject(new Error(r.status))).then(j => { A = j; M.render(); })
+    loading = fetch('data/ai_model.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : Promise.reject(new Error(r.status))).then(j => { A = j; M.render(); if (M.aiWidget) M.aiWidget.draw(); })
       .catch(e => { err = '모델 결과물을 읽지 못했습니다 (' + e.message + ') — ai/ 에서 python -m mlng_ai train'; M.render(); });
   };
   const ROLE = { text: ['문장 (비정형)', 'j-ok'], param: ['조건', 'j-ok'], category: ['범주', 'j-none'], outcome: ['결과', 'j-danger'], outcome_detail: ['결과 세부 · 제외', 'j-warn'], exposure: ['수량', 'j-none'],
@@ -221,6 +221,8 @@
   V.tx_report = wrap(vDiag);
   V.tx_lots = wrap(() => { const h = vTrace(), i = h.indexOf('<div class="card" style="margin-top:16px"><h2>원인 추적 검증'); return '<div class="trace-status"><span class="tag j-warn">데모 연결</span><span>공정 간 원인 미검증</span><details class="ui-details"><summary>데이터 출처</summary><p>서로 다른 공개 데이터의 LOT을 연결한 예시입니다. 실제 공장의 공정 간 원인이나 현장 성능을 검증한 결과가 아닙니다.</p></details></div>' + (i > 0 ? h.slice(0, i) : h); });
   M.aiModel = () => A;
+  M.aiLoad = load;
+  M.aiPick = id => { st.pick = String(id || ''); };
   M.mod({
     id: 'xai', group: '분석', order: 5.7,
     menu: [['xai', '공정 통합 AI', 'trend']],

@@ -111,7 +111,7 @@ DNS A 레코드 → 서버 IP, `.env` 에 `DOMAIN=` · `LETSENCRYPT_EMAIL=` → 
 
 ## 4-1. AI 엔진 API (파트너 판매용)
 
-파트너(MES · SI 업체)는 키 하나로 엔진을 쓴다. 파트너마다 모델 상태가 따로 쌓이고(공통 모델에서 출발), 요청마다 사용량이 기록된다.
+파트너(MES · SI 업체)는 키 하나로 엔진을 쓴다. 공장(키)마다 모델 상태가 따로 쌓이고(공통 모델에서 출발, 고객 간 결과 비공유), 요청마다 사용량이 기록된다.
 
 | 요청 | 하는 일 |
 |---|---|
@@ -120,6 +120,11 @@ DNS A 레코드 → 서버 IP, `.env` 에 `DOMAIN=` · `LETSENCRYPT_EMAIL=` → 
 | `POST /ai/v1/map` | 칼럼 해석 `{rows | csv, meta}` |
 | `POST /ai/v1/update` | 누적 학습 `{process, rows | csv}` — 먼저 예측해 채점한 뒤 학습 |
 | `POST /ai/v1/predict` | 위험도만 `{process, rows | csv}` — 행마다 기대 불량 · 확률 · 키운 칼럼 (처음 보는 공정은 학습 0건 순위) |
+| `POST /ai/v1/ingest` | 데이터 적재만 `{process, rows | csv}` — 운영 모델은 바뀌지 않음 |
+| `GET /ai/v1/models` | 이 공장의 운영 버전 · 후보 · 교체 이력 |
+| `POST /ai/v1/models/candidate` | 후보 모델 학습 `{process}` — 이후 구간에서 운영 모델과 비교 · 교체 권고 |
+| `POST /ai/v1/models/promote` | 승인 `{version, by}` — 운영 교체, 이전 모델 백업 |
+| `POST /ai/v1/models/rollback` | 복구 `{by}` |
 | `POST /ai/v1/diagnose` | 데이터 진단 `{csv, unit_cost, name, format:'html'}` — 칼럼 해석 · 품질 · 불량 원인 후보 · 손실 금액 리포트 |
 
 인증: 헤더 `X-MLNG-Key: mlng_…` (또는 `Authorization: Bearer …`). 키 원문은 서버에 저장하지 않는다(SHA-256 만).

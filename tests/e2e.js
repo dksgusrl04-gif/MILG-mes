@@ -37,6 +37,18 @@ const ok = (c, m) => { if (c) pass++; else fails.push(m); console.log(`${c ? '�
   await go('tx_lots'); await W();
   ok(await ev(() => /공정 간 원인 미검증/.test(document.querySelector('#view').innerText)), 'LOT 연결 시연의 검증 범위 표시');
 
+  // MILG AI 위젯 — 감지 · 원인 후보 · 영향 · 근거 · 확인 제안 → 담당자 처리
+  ok(await ev(() => !!document.querySelector('#aiw .aiw-fab')), 'MILG AI 버튼 표시');
+  await p.click('#aiw .aiw-fab'); await W(500);
+  ok(await ev(() => { const t = document.querySelector('#aiw .aiw-panel')?.innerText || ''; return ['감지', '원인 후보', '영향', '근거', '확인 제안'].every(k => t.includes(k)); }), 'MILG AI 패널 — 5개 항목');
+  const n0 = await ev(() => document.querySelectorAll('#aiw .aiw-badge').length ? +document.querySelector('#aiw .aiw-badge').innerText : 0);
+  await p.click('#aiw [data-aiw="reg"]'); await W(200);
+  ok(await ev(() => !!document.querySelector('#aiw .aiw-done')) && (await ev(() => +(document.querySelector('#aiw .aiw-badge')?.innerText || 0))) === n0 - 1, '조사 등록 → 처리 상태 · 미처리 수 감소');
+  await p.click('#aiw [data-aiw="undo"]'); await W(200);
+  await p.click('#aiw [data-aiw="more"]'); await W(400);
+  ok(await ev(() => MLNG.cur === 'tx_lots'), '상세 분석 → LOT 원인 추적');
+  await p.click('#aiw .aiw-panel header [data-aiw="toggle"]'); await W(200);
+
   // 2.0 신뢰 계층
   await go('net_ledger'); await W(); await p.click('#lg-verify'); await W(800); ok(/모두 사슬과 서명이 맞습니다/.test(await note()), '원장 전체 검증');
   await p.click('#lg-tamper'); await W(800); ok(/바뀌었|끊|불일치|다릅/.test(await note()), '원장 위변조 감지');

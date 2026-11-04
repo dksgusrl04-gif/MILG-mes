@@ -6,6 +6,7 @@ Supabase 가 해 주던 일 두 가지를 직접 한다.
   /health                  상태 확인 (Nginx · docker · 배포 스크립트가 본다)
   /ai/v1/*                 공정 통합 AI 엔진 — 파트너 키(X-MLNG-Key) · 테넌트별 모델 · 사용량 (app/tenants.py)
                            status · usage · map · update · predict · diagnose
+                           ingest · models (후보 학습 → 이후 기간 검증 → 승인 → 복구, 공장별 독립)
 
 요청 흐름
   브라우저 ─ HTTPS ─> Nginx ─ /rest, /functions ─> FastAPI(uvicorn) ─> PostgreSQL
@@ -363,3 +364,66 @@ async def ai_forget(process: str, req: Request):
         return err(e.msg, e.code, e.status)
     except ValueError as e:
         return err(str(e), 'AI400', 400)
+
+
+@app.post('/ai/v1/ingest')
+async def ai_ingest(req: Request):
+    """데이터만 쌓는다 (운영 모델은 그대로) — {process, rows | csv | file_b64}"""
+    return await _ai_call(req, 'ingest', 8_000_000, lambda S, b, df, m: S.ingest(str(b.get('process', '')), df, m), rate=30)
+
+
+async def _ai_json(req: Request) -> dict:
+    raw = await req.body()
+    if len(raw) > 20_000:
+        raise AIError('요청이 너무 큽니다', 'AI413', 413)
+    try:
+        b = json.loads(raw or b'{}')
+    except json.JSONDecodeError:
+        raise AIError('JSON 이 아닙니다', 'AI400')
+    if not isinstance(b, dict):
+        raise AIError('JSON 객체여야 합니다', 'AI400')
+    return b
+
+
+async def _ai_ops(req: Request, endpoint: str, fn):
+    import asyncio
+    try:
+        t = _tenant(req)
+        if limited(f"ai:{t['tenant']}:{client_ip(req)}", 20, 10):
+            raise AIError('요청이 너무 잦습니다', 'AI429', 429)
+        b = await _ai_json(req)
+        res = await asyncio.to_thread(fn, ai_service(t['tenant']), b)
+        tenants.record(t['tenant'], endpoint, 0, ip=client_ip(req), key_hint=t.get('hint', ''))
+        return res
+    except AIError as e:
+        return err(e.msg, e.code, e.status)
+    except ValueError as e:
+        return err(str(e), 'AI400', 400)
+
+
+@app.get('/ai/v1/models')
+async def ai_models(req: Request):
+    """이 공장의 모델 버전 · 평가 · 승인 · 복구 기록"""
+    try:
+        t = _tenant(req)
+    except AIError as e:
+        return err(e.msg, e.code, e.status)
+    return ai_service(t['tenant']).registry()
+
+
+@app.post('/ai/v1/models/candidate')
+async def ai_candidate(req: Request):
+    """후보 모델 학습 — {process} → 앞 기간 학습, 이후 기간에서 운영 모델과 비교 (운영 모델은 그대로)"""
+    return await _ai_ops(req, 'candidate', lambda S, b: S.train_candidate(str(b.get('process', ''))))
+
+
+@app.post('/ai/v1/models/promote')
+async def ai_promote(req: Request):
+    """담당자 승인 — {version, by} → 운영 모델 교체, 이전 버전 보관"""
+    return await _ai_ops(req, 'promote', lambda S, b: S.promote(str(b.get('version', '')), str(b.get('by', ''))[:40]))
+
+
+@app.post('/ai/v1/models/rollback')
+async def ai_rollback(req: Request):
+    """직전 운영 모델로 복구 — {by}"""
+    return await _ai_ops(req, 'rollback', lambda S, b: S.rollback(str(b.get('by', ''))[:40]))

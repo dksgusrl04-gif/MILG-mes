@@ -114,3 +114,29 @@ def test_korean_files_expiry_forget(client):
     assert any('"forget"' in p.read_text() and '"key": "mlng_' in p.read_text() for p in log)   # 감사 로그
     rec = tenants.purge('acme')
     assert rec['keys_revoked'] == 1 and not (Path(d) / 'tenants' / 'acme').exists()
+
+
+def test_model_ops_isolated(client):
+    """후보 학습 → 승인 → 복구, 그리고 A공장 갱신이 B공장 모델을 바꾸지 않는다"""
+    import hashlib
+    c, d = client
+    from app import tenants
+    A, B = {'X-MLNG-Key': tenants.issue('fac_a', 'A공장', 'partner')}, {'X-MLNG-Key': tenants.issue('fac_b', 'B공장', 'partner')}
+    rws = rows(400, seed=3)
+    assert c.post('/ai/v1/ingest', headers=A, json={'process': 'line_a', 'rows': rws}).json()['rows'] == 400
+    assert c.post('/ai/v1/ingest', headers=B, json={'process': 'line_a', 'rows': rows(400, seed=4)}).status_code == 200
+    c.post('/ai/v1/models/candidate', headers=B, json={'process': 'line_a'})
+    vb = c.post('/ai/v1/models/candidate', headers=B, json={'process': 'line_a'}).json()['version']
+    c.post('/ai/v1/models/promote', headers=B, json={'version': vb, 'by': 'qa_b'})
+    fb = Path(d, 'tenants', 'fac_b', 'model.json')
+    hb = hashlib.sha256(fb.read_bytes()).hexdigest()
+    cand = c.post('/ai/v1/models/candidate', headers=A, json={'process': 'line_a'}).json()
+    assert cand['eval']['candidate']['capture'] >= 0 and cand['recommend'] in ('promote', 'keep')
+    assert c.get('/ai/v1/models', headers=A).json()['active'] == 'base'          # 후보만으로는 운영 모델이 안 바뀐다
+    assert c.post('/ai/v1/models/promote', headers=A, json={'version': cand['version'], 'by': 'qa_a'}).json()['active'] == cand['version']
+    assert hashlib.sha256(fb.read_bytes()).hexdigest() == hb                      # B공장 모델 불변
+    assert c.post('/ai/v1/models/rollback', headers=A, json={'by': 'qa_a'}).json()['active'] == 'base'
+    reg = c.get('/ai/v1/models', headers=A).json()
+    assert [h['action'] for h in reg['history']] == ['promote', 'rollback']
+    assert c.get('/ai/v1/models', headers=B).json()['active'] == vb
+    assert c.post('/ai/v1/models/promote', headers=A, json={'version': 'v_none'}).status_code == 400

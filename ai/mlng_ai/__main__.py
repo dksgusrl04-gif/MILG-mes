@@ -4,6 +4,7 @@
   train            전체 학습 · 검증 → ai/state/model.json · web/data/ai_model.json · ai/reports/report.md
   train --fast     검증 일부(처음 보는 공정 · 가상 주입) 생략 — 빠른 확인용
   map 파일.csv     처음 보는 CSV 의 칼럼을 해석해 표로 보여 준다 (--llm: 애매한 칼럼만 Claude 에 물어봄)
+  compare4         4방식 비교 실험(규칙 · 자체 학습 · 공통 그대로 · 공통+추가 학습) → reports/compare4.md
   diagnose 파일.csv|xlsx [--unit-cost 15000] [--out 리포트.html]   (UTF-8 · CP949 자동)
                    고객 데이터 진단 — 칼럼 해석 · 데이터 품질 · 불량 원인 후보 · 손실 금액 리포트 (HTML)
 """
@@ -30,6 +31,18 @@ def main(argv):
         df = pd.read_csv(argv[2])
         for c, s in sense_table(df, llm='--llm' in argv).items():
             print(f"{c[:28]:28s} {s.role:14s} {s.quantity:12s} {s.confidence:.2f}  {'; '.join(s.why)[:70]}")
+    elif cmd == 'compare4':
+        import json
+        from pathlib import Path
+        from .engine import build
+        from .evaluate import compare4, compare4_md
+        E = build()
+        res = [compare4(E, k) for k in E]
+        out = Path(__file__).resolve().parent.parent / 'reports'
+        out.mkdir(exist_ok=True)
+        (out / 'compare4.md').write_text(compare4_md(res), encoding='utf-8')
+        (out / 'compare4.json').write_text(json.dumps(res, ensure_ascii=False, default=float, indent=1), encoding='utf-8')
+        print(compare4_md(res))
     elif cmd == 'diagnose' and len(argv) > 2:
         from pathlib import Path
         import pandas as pd

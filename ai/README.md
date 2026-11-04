@@ -1,6 +1,6 @@
 # MLNG 공정 통합 AI (`mlng_ai`)
 
-공정마다 다른 칼럼을 **이름 · 설명 · 단위 · 값 모양으로 스스로 해석**해, 여러 공정을 **한 모델이 누적 학습**하고 **공정 간 원인**까지 거슬러 찾는 모델.
+공정마다 다른 칼럼을 **이름 · 설명 · 단위 · 값 모양으로 해석**해 공통 엔진 + 공정별 기본 모델에서 출발하고, 공장마다 **그 고객 내부에서 허용된 데이터로만** 이어서 학습해 앞 공정까지 **원인 후보**를 제시하는 모델. 고객 간 결과는 공유하지 않는다.
 
 ```
 칼럼 해석 (schema)  →  의미 슬롯 (features)  →  LOT 추적으로 앞 공정 연결  →  누적 베이즈 학습 (model)  →  검증 (engine)
@@ -24,10 +24,19 @@ pip install -r requirements.txt
 python -m mlng_ai fetch          # 공개 데이터(UCI: AI4I 2020 · Cylinder Bands · SECOM) 받기
 python -m mlng_ai train          # 학습 · 검증 → state/model.json · ../web/data/ai_model.json · reports/report.md (약 1분)
 python -m mlng_ai map 파일.csv    # 처음 보는 CSV 칼럼 해석 (--llm: 애매한 칼럼만 Claude)
+python -m mlng_ai compare4       # 4방식 비교 → reports/compare4.md
 python -m pytest -q              # 시험
 ```
 
-결과는 [reports/report.md](reports/report.md). MES 화면: 더보기 › 분석 › **공정 통합 AI**.
+결과는 [reports/report.md](reports/report.md).
+
+## 평가 기준 — 알림 허용량
+불량이 드문 현장은 전체 정확도보다 «위험도 상위 10%만 알림했을 때 불량을 얼마나 잡는가» 로 본다 (`evaluate.py`).
+`compare4` 는 같은 이후 기간 · 같은 허용량에서 ① 규칙(가장 크게 벗어난 조건) ② 자체 학습 ③ 공통 모델 그대로 ④ 공통 + 추가 학습을 학습량별로 비교한다 → [reports/compare4.md](reports/compare4.md).
+현재 결과: 규칙 기준선이 강하고(정밀가공 검사 32% · AI4I 69%), 공통 모델의 이점은 데이터마다 일관되지 않다. 소량 공정(프레스 · 점용접 · MCT)은 평가 표본 부족으로 판단 보류.
+
+## 공장별 모델 운영 (`service.py`)
+`ingest` 데이터 적재(학습 없음) → `train_candidate` 후보 모델 학습 · 이후 구간에서 운영 모델과 비교 → `promote` 승인(운영 교체, 이전 모델 백업) → `rollback` 복구. 기록: `versions/` · `registry.json`. MES 화면: 더보기 › 분석 › **공정 통합 AI**.
 서버(server/)에서는 `/ai/v1/map` (칼럼 해석) · `/ai/v1/update` (새 데이터로 누적 학습 1회) · `/ai/v1/status`.
 
 ## 데이터
