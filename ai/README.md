@@ -43,6 +43,7 @@ python -m pytest -q              # 시험
 - 실행: `python -m mlng_ai mct <요약 폴더> [--site <현장 요약 폴더>]` → `reports/mct.md` · `state/base/mct.json`. 현장 결과는 현장 폴더에만 저장하고 저장소에 넣지 않는다.
 - 결과: [reports/mct.md](reports/mct.md)
 - Stiehl 2023 밀링 데이터(Mendeley zpxs87bjt8 v3, 설비 3대 × 공구 9개, h5 6,418개): `python -m mlng_ai stiehl <h5 폴더> <요약 폴더>` 로 가공 1회 = 한 행 요약(`stiehl_runs.csv`)을 만든 뒤 같은 `mct` 명령에 넣으면 함께 학습 · 평가하고, «설비 하나를 빼고 학습 → 그 설비로 평가» 도 추가로 낸다. 정답 기준 기본 VB ≥ 120 µm (`--vb` 로 변경).
+- «교체 후 변화» 슬롯(`rel:up · rel:down · rel:mean`): 공구 · 금형 교체(리셋) 뒤 처음 10회 평균 대비 지금 값의 변화를 **방향을 살려** 본다. 기존 슬롯은 «평소보다 얼마나 벗어났나» 를 절댓값으로 봐서, 새 공구로 바뀌며 값이 떨어지는 것도 이상으로 읽었다. 저장된 옛 모델은 불러올 때 새 슬롯을 효과 0 으로 끼워 넣어 그대로 쓴다.
 
 ## 공장별 모델 운영 (`service.py`)
 `ingest` 데이터 적재(학습 없음) → `train_candidate` 후보 모델 학습 · 이후 구간에서 운영 모델과 비교 → `promote` 승인(운영 교체, 이전 모델 백업) → `rollback` 복구. 기록: `versions/` · `registry.json`. MES 화면: 더보기 › 분석 › **공정 통합 AI**.

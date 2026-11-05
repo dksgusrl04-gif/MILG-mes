@@ -60,3 +60,25 @@ def test_stiehl_summarize(tmp_path):
     assert np.isnan(d.torque_axis_z_rms.iloc[0]) and np.isfinite(d.torque_axis_z_rms.iloc[1])
     summarize(src, tmp_path / 'sum', workers=1)                 # 다시 실행해도 중복 없음
     assert len(pd.read_csv(out)) == 2
+
+
+def test_old_model_loads_after_new_slots():
+    from mlng_ai.features import SLOTS
+    from mlng_ai.model import CumulativeModel
+    old = [s for s in SLOTS if not s.startswith('rel:')]
+    M = CumulativeModel(old)
+    M.add_process('p', 0.05)
+    M.m[0] = 0.7
+    M2 = CumulativeModel.from_dict(M.to_dict())
+    assert M2.slots == list(SLOTS) and M2.K == len(SLOTS)
+    assert M2.m[SLOTS.index(old[0])] == 0.7 and M2.m[SLOTS.index('rel:up')] == 0.0
+    mu = M2.predict('p', np.zeros((3, len(SLOTS))), np.ones(3))[0]
+    assert np.allclose(mu, mu[0]) and 0 < mu[0] < 1
+
+
+def test_relative_change_keeps_direction():
+    from mlng_ai.features import relative_change
+    df = pd.DataFrame({'f': np.r_[np.full(15, 100.0), np.full(5, 130.0), np.full(15, 100.0)]})
+    reset = np.zeros(35, bool); reset[0] = reset[20] = True
+    R = relative_change(df, ['f'], reset, n_ref=10)[:, 0]
+    assert R[0] == 0 and R[16] > 0 and abs(R[22]) < 1e-9     # 커진 뒤 +, 새 공구로 바뀌면 다시 0 (떨어짐을 이상으로 보지 않음)

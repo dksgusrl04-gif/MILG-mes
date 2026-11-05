@@ -219,7 +219,32 @@ class CumulativeModel:
         o.procs, o.m, o.S = list(d['procs']), np.array(d['m']), np.array(d['S'])
         o.phi, o.seen, o.version, o.history, o.acc = d['phi'], d['seen'], d['version'], d.get('history', []), d.get('acc', {})
         o.gate, o.q_alpha, o.binary = d.get('gate', {}), d.get('q_alpha', 0.02), d.get('binary', {})
+        from .features import SLOTS                     # 저장 뒤 슬롯이 늘었으면 (엔진 업데이트) 새 슬롯을 «효과 0 · 사전분포» 로 끼워 넣는다
+        if o.slots != list(SLOTS) and set(o.slots) <= set(SLOTS):
+            o.expand_slots(list(SLOTS))
         return o
+
+    def expand_slots(self, slots: list[str]):
+        """슬롯 목록을 넓힌다 — 기존 효과 · 불확실성은 그대로, 새 슬롯은 효과 0 · 사전분산"""
+        tb, td, _ = self.tau
+        K2, P = len(slots), len(self.procs)
+        old = {s: i for i, s in enumerate(self.slots)}
+        n2 = K2 + P * (K2 + 1)
+        pos, var = np.full(n2, -1), np.zeros(n2)
+        for j, s in enumerate(slots):
+            pos[j] = old.get(s, -1); var[j] = tb ** 2
+        for p in range(P):
+            a_old, a_new = self.K + p * (self.K + 1), K2 + p * (K2 + 1)
+            pos[a_new] = a_old
+            for j, s in enumerate(slots):
+                pos[a_new + 1 + j] = a_old + 1 + old[s] if s in old else -1
+                var[a_new + 1 + j] = td ** 2
+        m2 = np.zeros(n2); S2 = np.diag(var)
+        k = pos >= 0
+        m2[k] = self.m[pos[k]]
+        S2[np.ix_(k, k)] = self.S[np.ix_(pos[k], pos[k])]
+        self.slots, self.K, self.m, self.S = list(slots), K2, m2, S2
+        return self
 
     def save(self, path):
         with open(path, 'w', encoding='utf-8') as f:

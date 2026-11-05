@@ -29,16 +29,17 @@ from .schema import ColumnSense, leakage_guard, sense_table
 
 QS = list(QUANTITY) + ['unknown']
 ACC_SLOTS = ['acc:native', 'acc:count', 'acc:exposure', 'acc:dose', 'acc:drift', 'acc:spec_dose']
+REL_SLOTS = ['rel:up', 'rel:down', 'rel:mean']      # 교체(리셋) 뒤 처음 N회 대비 변화 — 방향 유지
 WAVE_SLOTS = ['wave:dose', 'wave:trend', 'wave:rough']
 TEXT_SLOTS = ['text:risk', 'text:alarm']
-BASE_SLOTS = [f'q:{q}' for q in QS] + ['spread', 'spec', 'event', 'all_max', 'n_out', 'cat_rare', 'load', 'missing'] + ACC_SLOTS + WAVE_SLOTS + TEXT_SLOTS
+BASE_SLOTS = [f'q:{q}' for q in QS] + ['spread', 'spec', 'event', 'all_max', 'n_out', 'cat_rare', 'load', 'missing'] + ACC_SLOTS + REL_SLOTS + WAVE_SLOTS + TEXT_SLOTS
 UP_SLOTS = ['up:all_max', 'up:n_out', 'up:spec', 'up:spread', 'up:event', 'up:q:temperature', 'up:q:pressure', 'up:q:current', 'up:q:wear', 'up:q:vibration', 'up:q:time',
             'up:acc:dose', 'up:wave:dose', 'up:text:risk']
-GROUPS = {'적산': ACC_SLOTS, '파형': WAVE_SLOTS, '텍스트': TEXT_SLOTS}
+GROUPS = {'적산': ACC_SLOTS, '교체 후 변화': REL_SLOTS, '파형': WAVE_SLOTS, '텍스트': TEXT_SLOTS}
 SLOTS = BASE_SLOTS + UP_SLOTS + ['up:has']
 SLOT_KO = {'spread': '변동(산포) 증가', 'spec': '규격 대비 이탈', 'event': '교체 · 급변 사건', 'all_max': '가장 크게 벗어난 조건', 'n_out': '벗어난 조건 수',
            'cat_rare': '드문 작업자 · 자재 · 설비', 'load': '수량(장입량) 과다', 'missing': '빈 값', 'up:has': '앞 공정 연결 있음',
-           'acc:native': '적산 값 (사용 시간 · 마모)', 'acc:count': '교체 뒤 누적 횟수', 'acc:exposure': '교체 뒤 누적 생산량', 'acc:dose': '누적 이탈량 (작은 이탈이 쌓임)', 'acc:drift': '지속 치우침 (한쪽으로 계속)',
+           'rel:up': '교체 뒤 처음보다 커진 조건', 'rel:down': '교체 뒤 처음보다 작아진 조건', 'rel:mean': '교체 뒤 조건 전반의 변화', 'acc:native': '적산 값 (사용 시간 · 마모)', 'acc:count': '교체 뒤 누적 횟수', 'acc:exposure': '교체 뒤 누적 생산량', 'acc:dose': '누적 이탈량 (작은 이탈이 쌓임)', 'acc:drift': '지속 치우침 (한쪽으로 계속)',
            'acc:spec_dose': '규격 이탈 누적', 'wave:dose': '파형 · 규격 밖 체류 (이탈 적분)', 'wave:trend': '파형 · 작업 중 기울기', 'wave:rough': '파형 · 요동',
            'text:risk': '메모 · 알람 문장 위험도 (학습)', 'text:alarm': '메모 속 이상 징후 단어'}
 for q, (ko, _) in QUANTITY.items():
@@ -66,6 +67,32 @@ def find_entity(df: pd.DataFrame, S: dict, given: str = '') -> str:
             if ch < min(score, 0.15):
                 best, score = c, ch
     return best
+
+
+REL_REF = 10      # 교체 뒤 처음 몇 회를 «새 것» 기준으로 삼나
+
+
+def relative_change(df: pd.DataFrame, params: list[str], reset: np.ndarray, n_ref: int = REL_REF) -> np.ndarray:
+    """교체(리셋) 뒤 처음 n_ref 회 평균 대비 지금 값의 변화 (부호 유지) ÷ 그 칼럼의 지금까지 표준편차.
+    그 시점까지 본 행만 쓴다: 구간의 p 번째 행은 앞선 min(p, n_ref) 행이 기준 (p = 0 이면 0)."""
+    N = len(df)
+    seg = np.cumsum(reset) - 1
+    pos = np.arange(N) - np.searchsorted(seg, seg, side='left')
+    out = np.zeros((N, len(params)))
+    for j, c in enumerate(params):
+        x = pd.to_numeric(df[c], errors='coerce').to_numpy(float)
+        xf = np.where(np.isfinite(x), x, 0.0); ok = np.isfinite(x).astype(float)
+        s1 = np.concatenate([[0], np.cumsum(xf)[:-1]]); s2 = np.concatenate([[0], np.cumsum(xf * xf)[:-1]]); k = np.concatenate([[0], np.cumsum(ok)[:-1]])
+        sd = np.sqrt(np.maximum(s2 / np.maximum(k, 1) - (s1 / np.maximum(k, 1)) ** 2, 0))          # 지금까지 표준편차 (이전 행만)
+        ref = np.zeros(N)
+        start = np.searchsorted(seg, seg, side='left')
+        cx = np.concatenate([[0], np.cumsum(xf)]); co = np.concatenate([[0], np.cumsum(ok)])
+        end = start + np.minimum(pos, n_ref)
+        cntr = co[end] - co[start]
+        ref = np.where(cntr > 0, (cx[end] - cx[start]) / np.maximum(cntr, 1), np.nan)
+        r = (x - ref) / np.where(sd > 1e-12, sd, np.nan)
+        out[:, j] = np.clip(np.nan_to_num(r), -10, 10)
+    return out
 
 
 def accumulate(df, S, t, n, X):
@@ -114,6 +141,9 @@ def accumulate(df, S, t, n, X):
         acc_who = (params, dose_who, drift_who)
     else:
         acc_who = None
+    if has_reset and params:
+        R = relative_change(df, params, reset)
+        X['rel:up'], X['rel:down'], X['rel:mean'] = R.max(1), (-R).max(1), R.mean(1)
     if has_reset:
         X['acc:count'] = cnt                                  # 교체 뒤 몇 번째인가 (뒤에서 공정 안 σ 로 맞춤)
         if n.max() > 1:                                       # 수량이 행마다 다를 때만 (한 개 단위면 횟수와 같음)
