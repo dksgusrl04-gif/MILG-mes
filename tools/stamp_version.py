@@ -13,7 +13,8 @@ WEB = os.path.join(ROOT, 'web')
 
 
 def h(path):
-    return hashlib.sha256(open(path, 'rb').read()).hexdigest()
+    # 줄바꿈을 LF 로 맞춰 해시 — Windows(CRLF) 에서 찍어도 CI(Linux · LF) 와 같은 값
+    return hashlib.sha256(open(path, 'rb').read().replace(b'\r\n', b'\n')).hexdigest()
 
 
 def main():

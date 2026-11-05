@@ -1,11 +1,11 @@
 /* 자동 생성 — tools/stamp_version.py. 손으로 고치지 않는다 */
 window.MLNG_BUILD = {
- "hash": "da8ec4902ab3ba969b5df2f59035998d1e1b3b9f8d103dce1d889525c1803bd6",
+ "hash": "f66e27f5b94160426bf12dd8ce3d5142b1885df3bf3f9ad6b1d09574633e8752",
  "files": {
   "js/runtime.js": "278a8aece5a7e153",
   "js/config.js": "cc588350eb35c6a6",
   "js/data.js": "5019365efa45e597",
-  "js/core.js": "9524facb759e3b1e",
+  "js/core.js": "173929d87afa0e69",
   "js/xlsx.js": "d0769185ddecb37b",
   "js/mod_common.js": "69c2fc97d82d1160",
   "js/mod_line.js": "c80254288d11c84d",
