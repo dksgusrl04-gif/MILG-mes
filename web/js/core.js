@@ -244,6 +244,8 @@
   }
 
   M.render = () => {
+    // AI 결과가 공정 데이터보다 먼저 도착해도 초기 로딩 화면을 유지한다.
+    if (!M.S) return;
     const w = M.where(M.cur);
     let title = M.cur, grp = '';
     if (w && w.item) { title = w.item.tabs.length > 1 || w.tab[2] ? w.tab[1] : w.item.t; grp = w.item.tabs.length > 1 || w.tab[2] ? w.item.t : ''; }
