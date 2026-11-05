@@ -5,6 +5,11 @@
   train --fast     검증 일부(처음 보는 공정 · 가상 주입) 생략 — 빠른 확인용
   map 파일.csv     처음 보는 CSV 의 칼럼을 해석해 표로 보여 준다 (--llm: 애매한 칼럼만 Claude 에 물어봄)
   compare4         4방식 비교 실험(규칙 · 자체 학습 · 공통 그대로 · 공통+추가 학습) → reports/compare4.md
+  mct 요약폴더 [--site 현장요약폴더] [--vb 120]   (--vb: Stiehl 데이터 교체 임박 기준 µm)
+                   MCT 기본 모델 — HMoTP · NASA 로 학습 · 공구 단위 평가 · 정상 기준 모드 검증
+                   → reports/mct.md · state/base/mct.json (현장 결과는 현장 폴더에만 저장)
+  stiehl h5폴더 요약폴더 [--workers 4]
+                   Mendeley 밀링 마모 데이터(설비 3대 · 공구 9개, h5) → 요약폴더/stiehl_runs.csv (이어서 실행 가능)
   diagnose 파일.csv|xlsx [--unit-cost 15000] [--out 리포트.html]   (UTF-8 · CP949 자동)
                    고객 데이터 진단 — 칼럼 해석 · 데이터 품질 · 불량 원인 후보 · 손실 금액 리포트 (HTML)
 """
@@ -43,6 +48,19 @@ def main(argv):
         (out / 'compare4.md').write_text(compare4_md(res), encoding='utf-8')
         (out / 'compare4.json').write_text(json.dumps(res, ensure_ascii=False, default=float, indent=1), encoding='utf-8')
         print(compare4_md(res))
+    elif cmd == 'stiehl' and len(argv) > 3:
+        from .stiehl import main as st_main
+        st_main(argv[2:])
+    elif cmd == 'mct' and len(argv) > 2:
+        from pathlib import Path
+        from .mct import run
+        root = Path(__file__).resolve().parent.parent
+        site = argv[argv.index('--site') + 1] if '--site' in argv else None
+        kw = {'stiehl_um': float(argv[argv.index('--vb') + 1])} if '--vb' in argv else {}
+        r = run(argv[2], root / 'reports', root / 'state' / 'base', site, **kw)
+        print((root / 'reports' / 'mct.md').read_text(encoding='utf-8'))
+        if r.get('site'):
+            print(f"현장 결과 → {site}/report_site.md (저장소에 넣지 않음)")
     elif cmd == 'diagnose' and len(argv) > 2:
         from pathlib import Path
         import pandas as pd

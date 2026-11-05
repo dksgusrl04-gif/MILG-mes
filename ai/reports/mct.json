@@ -1,0 +1,477 @@
+{
+ "cv": {
+  "sensor": {
+   "mct_hmotp": {
+    "name": "MCT 엔드밀 가공 (HMoTP 2024)",
+    "rows": 300,
+    "events": 23,
+    "tools": 3,
+    "folds": [
+     {
+      "tool": "T01",
+      "rows": 100,
+      "events": 2,
+      "rule": 0.9795918367346939,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T02",
+      "rows": 100,
+      "events": 17,
+      "rule": 0.6555634301913537,
+      "local": 0.966690290574061,
+      "joint": 0.9688164422395464
+     },
+     {
+      "tool": "T03",
+      "rows": 100,
+      "events": 4,
+      "rule": 0.5807291666666666,
+      "local": 0.9895833333333334,
+      "joint": 0.9895833333333334
+     }
+    ],
+    "rule": {
+     "auc": 0.6892167634594255,
+     "budget": 0.1,
+     "alerts": 30,
+     "capture": 0.08695652173913043,
+     "precision": 0.06666666666666667,
+     "lift": 0.8695652173913044
+    },
+    "local": {
+     "auc": 0.8811803484539319,
+     "budget": 0.1,
+     "alerts": 30,
+     "capture": 0.43478260869565216,
+     "precision": 0.3333333333333333,
+     "lift": 4.3478260869565215
+    },
+    "joint": {
+     "auc": 0.8865170302935175,
+     "budget": 0.1,
+     "alerts": 30,
+     "capture": 0.43478260869565216,
+     "precision": 0.3333333333333333,
+     "lift": 4.3478260869565215
+    }
+   },
+   "mct_nasa": {
+    "name": "MCT 정면 밀링 (NASA)",
+    "rows": 146,
+    "events": 96,
+    "tools": 16,
+    "folds": [
+     {
+      "tool": "T01",
+      "rows": 13,
+      "events": 11,
+      "rule": 0.0,
+      "local": 0.5909090909090909,
+      "joint": 0.5909090909090909
+     },
+     {
+      "tool": "T02",
+      "rows": 13,
+      "events": 7,
+      "rule": 0.35714285714285715,
+      "local": 0.7857142857142857,
+      "joint": 0.7619047619047619
+     },
+     {
+      "tool": "T03",
+      "rows": 14,
+      "events": 9,
+      "rule": 0.15555555555555556,
+      "local": 0.8222222222222222,
+      "joint": 0.8222222222222222
+     },
+     {
+      "tool": "T04",
+      "rows": 7,
+      "events": 5,
+      "rule": 0.4,
+      "local": 0.8,
+      "joint": 0.8
+     },
+     {
+      "tool": "T05",
+      "rows": 6,
+      "events": 4,
+      "rule": 0.75,
+      "local": 0.125,
+      "joint": 0.25
+     },
+     {
+      "tool": "T06",
+      "rows": 1,
+      "events": 0,
+      "rule": null,
+      "local": null,
+      "joint": null
+     },
+     {
+      "tool": "T07",
+      "rows": 7,
+      "events": 4,
+      "rule": 0.25,
+      "local": 0.75,
+      "joint": 1.0
+     },
+     {
+      "tool": "T08",
+      "rows": 5,
+      "events": 3,
+      "rule": 0.5,
+      "local": 0.0,
+      "joint": 0.0
+     },
+     {
+      "tool": "T09",
+      "rows": 9,
+      "events": 5,
+      "rule": 0.2,
+      "local": 0.6,
+      "joint": 0.65
+     },
+     {
+      "tool": "T10",
+      "rows": 10,
+      "events": 6,
+      "rule": 0.5,
+      "local": 0.7916666666666666,
+      "joint": 0.8333333333333334
+     },
+     {
+      "tool": "T11",
+      "rows": 20,
+      "events": 11,
+      "rule": 0.29292929292929293,
+      "local": 0.7373737373737373,
+      "joint": 0.7373737373737373
+     },
+     {
+      "tool": "T12",
+      "rows": 12,
+      "events": 8,
+      "rule": 0.4375,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T13",
+      "rows": 13,
+      "events": 10,
+      "rule": 0.03333333333333333,
+      "local": 0.9666666666666667,
+      "joint": 1.0
+     },
+     {
+      "tool": "T14",
+      "rows": 7,
+      "events": 5,
+      "rule": 0.6,
+      "local": 0.4,
+      "joint": 0.4
+     },
+     {
+      "tool": "T15",
+      "rows": 6,
+      "events": 5,
+      "rule": 0.2,
+      "local": 0.8,
+      "joint": 1.0
+     },
+     {
+      "tool": "T16",
+      "rows": 3,
+      "events": 3,
+      "rule": null,
+      "local": null,
+      "joint": null
+     }
+    ],
+    "rule": {
+     "auc": 0.3746875,
+     "budget": 0.1,
+     "alerts": 15,
+     "capture": 0.08333333333333333,
+     "precision": 0.5333333333333333,
+     "lift": 0.8111111111111111
+    },
+    "local": {
+     "auc": 0.5772916666666666,
+     "budget": 0.1,
+     "alerts": 15,
+     "capture": 0.14583333333333334,
+     "precision": 0.9333333333333333,
+     "lift": 1.4194444444444445
+    },
+    "joint": {
+     "auc": 0.5785416666666666,
+     "budget": 0.1,
+     "alerts": 15,
+     "capture": 0.13541666666666666,
+     "precision": 0.8666666666666667,
+     "lift": 1.3180555555555558
+    }
+   }
+  },
+  "usage": {
+   "mct_hmotp": {
+    "name": "MCT 엔드밀 가공 (HMoTP 2024)",
+    "rows": 300,
+    "events": 23,
+    "tools": 3,
+    "folds": [
+     {
+      "tool": "T01",
+      "rows": 100,
+      "events": 2,
+      "rule": 0.9795918367346939,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T02",
+      "rows": 100,
+      "events": 17,
+      "rule": 0.6555634301913537,
+      "local": 0.9766123316796598,
+      "joint": 0.9723600283486888
+     },
+     {
+      "tool": "T03",
+      "rows": 100,
+      "events": 4,
+      "rule": 0.5807291666666666,
+      "local": 0.9947916666666666,
+      "joint": 0.9947916666666666
+     }
+    ],
+    "rule": {
+     "auc": 0.6892167634594255,
+     "budget": 0.1,
+     "alerts": 30,
+     "capture": 0.08695652173913043,
+     "precision": 0.06666666666666667,
+     "lift": 0.8695652173913044
+    },
+    "local": {
+     "auc": 0.9394129649976456,
+     "budget": 0.1,
+     "alerts": 30,
+     "capture": 0.5652173913043478,
+     "precision": 0.43333333333333335,
+     "lift": 5.6521739130434785
+    },
+    "joint": {
+     "auc": 0.9471040652958719,
+     "budget": 0.1,
+     "alerts": 30,
+     "capture": 0.6086956521739131,
+     "precision": 0.4666666666666667,
+     "lift": 6.086956521739131
+    }
+   },
+   "mct_nasa": {
+    "name": "MCT 정면 밀링 (NASA)",
+    "rows": 146,
+    "events": 96,
+    "tools": 16,
+    "folds": [
+     {
+      "tool": "T01",
+      "rows": 13,
+      "events": 11,
+      "rule": 0.0,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T02",
+      "rows": 13,
+      "events": 7,
+      "rule": 0.35714285714285715,
+      "local": 0.8333333333333334,
+      "joint": 0.8333333333333334
+     },
+     {
+      "tool": "T03",
+      "rows": 14,
+      "events": 9,
+      "rule": 0.4222222222222222,
+      "local": 0.5333333333333333,
+      "joint": 0.5555555555555556
+     },
+     {
+      "tool": "T04",
+      "rows": 7,
+      "events": 5,
+      "rule": 0.4,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T05",
+      "rows": 6,
+      "events": 4,
+      "rule": 0.75,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T06",
+      "rows": 1,
+      "events": 0,
+      "rule": null,
+      "local": null,
+      "joint": null
+     },
+     {
+      "tool": "T07",
+      "rows": 7,
+      "events": 4,
+      "rule": 0.25,
+      "local": 0.8333333333333334,
+      "joint": 0.8333333333333334
+     },
+     {
+      "tool": "T08",
+      "rows": 5,
+      "events": 3,
+      "rule": 0.5,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T09",
+      "rows": 9,
+      "events": 5,
+      "rule": 0.2,
+      "local": 0.95,
+      "joint": 1.0
+     },
+     {
+      "tool": "T10",
+      "rows": 10,
+      "events": 6,
+      "rule": 0.5,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T11",
+      "rows": 20,
+      "events": 11,
+      "rule": 0.7070707070707071,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T12",
+      "rows": 12,
+      "events": 8,
+      "rule": 0.4375,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T13",
+      "rows": 13,
+      "events": 10,
+      "rule": 0.03333333333333333,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T14",
+      "rows": 7,
+      "events": 5,
+      "rule": 0.6,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T15",
+      "rows": 6,
+      "events": 5,
+      "rule": 0.2,
+      "local": 1.0,
+      "joint": 1.0
+     },
+     {
+      "tool": "T16",
+      "rows": 3,
+      "events": 3,
+      "rule": null,
+      "local": null,
+      "joint": null
+     }
+    ],
+    "rule": {
+     "auc": 0.44427083333333334,
+     "budget": 0.1,
+     "alerts": 15,
+     "capture": 0.09375,
+     "precision": 0.6,
+     "lift": 0.9125
+    },
+    "local": {
+     "auc": 0.8114583333333333,
+     "budget": 0.1,
+     "alerts": 15,
+     "capture": 0.15625,
+     "precision": 1.0,
+     "lift": 1.5208333333333335
+    },
+    "joint": {
+     "auc": 0.8164583333333333,
+     "budget": 0.1,
+     "alerts": 15,
+     "capture": 0.15625,
+     "precision": 1.0,
+     "lift": 1.5208333333333335
+    }
+   }
+  }
+ },
+ "best": "usage",
+ "rules": {
+  "mct_hmotp": "평균 마모 ≥ 200 µm",
+  "mct_nasa": "VB ≥ 0.2 mm"
+ },
+ "normal_hmotp": {
+  "ref_cuts": 20,
+  "cols": 35,
+  "test_rows": 240,
+  "events": 23,
+  "auc": 0.8607493488278902,
+  "spearman_wear": {
+   "T01": 0.6618377871542429,
+   "T02": 0.8601500234411628,
+   "T03": 0.8419831223628692
+  },
+  "alert_rate_early": 0.6285714285714286,
+  "alert_rate_ng": 1.0,
+  "budget": 0.1,
+  "alerts": 24,
+  "capture": 0.391304347826087,
+  "precision": 0.375,
+  "lift": 3.913043478260869
+ },
+ "cnc_schema": {
+  "cols": 48,
+  "params": 40,
+  "known_quantity": 32,
+  "by_quantity": {
+   "unknown": 8,
+   "speed": 8,
+   "vibration": 8,
+   "current": 7,
+   "voltage": 6,
+   "power": 3
+  }
+ }
+}

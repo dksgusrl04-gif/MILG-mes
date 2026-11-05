@@ -35,6 +35,15 @@ python -m pytest -q              # 시험
 `compare4` 는 같은 이후 기간 · 같은 허용량에서 ① 규칙(가장 크게 벗어난 조건) ② 자체 학습 ③ 공통 모델 그대로 ④ 공통 + 추가 학습을 학습량별로 비교한다 → [reports/compare4.md](reports/compare4.md).
 현재 결과: 규칙 기준선이 강하고(정밀가공 검사 32% · AI4I 69%), 공통 모델의 이점은 데이터마다 일관되지 않다. 소량 공정(프레스 · 점용접 · MCT)은 평가 표본 부족으로 판단 보류.
 
+## MCT 기본 모델 (`mct.py` · `normal.py`)
+공통 엔진은 그대로 두고, 공정별 기본 모델을 따로 학습한다. 첫 공정은 MCT.
+- 정답 규칙(사람이 정함): HMoTP 평균 마모 ≥ 200 µm · NASA 밀링 VB ≥ 0.2 mm → 공구 교체 필요. 마모 칼럼은 입력에서 뺀다.
+- 평가: 공구 단위 교차검증(한 공구를 빼고 학습 → 그 공구로 평가). 입력 «센서만» · «센서 + 공구 누적 사용량» 을 나눠 본다.
+- 정상 기준 모드: 정답이 없는 현장 데이터는 기준 기간의 «평소 범위» 를 배우고 이후 기간 알림 비율(오경보율)로 평가. 방법 자체는 정답이 있는 HMoTP 로 검증.
+- 실행: `python -m mlng_ai mct <요약 폴더> [--site <현장 요약 폴더>]` → `reports/mct.md` · `state/base/mct.json`. 현장 결과는 현장 폴더에만 저장하고 저장소에 넣지 않는다.
+- 결과: [reports/mct.md](reports/mct.md)
+- Stiehl 2023 밀링 데이터(Mendeley zpxs87bjt8 v3, 설비 3대 × 공구 9개, h5 6,418개): `python -m mlng_ai stiehl <h5 폴더> <요약 폴더>` 로 가공 1회 = 한 행 요약(`stiehl_runs.csv`)을 만든 뒤 같은 `mct` 명령에 넣으면 함께 학습 · 평가하고, «설비 하나를 빼고 학습 → 그 설비로 평가» 도 추가로 낸다. 정답 기준 기본 VB ≥ 120 µm (`--vb` 로 변경).
+
 ## 공장별 모델 운영 (`service.py`)
 `ingest` 데이터 적재(학습 없음) → `train_candidate` 후보 모델 학습 · 이후 구간에서 운영 모델과 비교 → `promote` 승인(운영 교체, 이전 모델 백업) → `rollback` 복구. 기록: `versions/` · `registry.json`. MES 화면: 더보기 › 분석 › **공정 통합 AI**.
 서버(server/)에서는 `/ai/v1/map` (칼럼 해석) · `/ai/v1/update` (새 데이터로 누적 학습 1회) · `/ai/v1/status`.
