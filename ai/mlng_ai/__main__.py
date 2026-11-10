@@ -10,6 +10,11 @@
                    → reports/mct.md · state/base/mct.json (현장 결과는 현장 폴더에만 저장)
   stiehl h5폴더 요약폴더 [--workers 4]
                    Mendeley 밀링 마모 데이터(설비 3대 · 공구 9개, h5) → 요약폴더/stiehl_runs.csv (이어서 실행 가능)
+  pressfit Delta.csv 스냅핏.zip 요약폴더        압입 곡선 요약 → 요약폴더/pf_delta.csv · pf_snap.csv
+  joining 압입폴더 요약폴더                     스크류 체결 · 링 삽입 · 버링 성형 · 압착 zip 그대로 요약 → join_*.csv (이어서 실행 가능)
+  mct-pressfit MCT요약폴더 압입요약폴더 [압입요약폴더2 …] [--screw-label nok]
+                   MCT + 압입 계열 — 따로 · 같은 공정 합침 · 두 공정 합침 비교 → reports/mct_pressfit.md
+  benchmark   MCT요약폴더                       — MCT 기준선 비교(규칙 · 엔진 · 일반 ML) + 현장 지표(선행 · 놓침 · 오경보)
   diagnose 파일.csv|xlsx [--unit-cost 15000] [--out 리포트.html]   (UTF-8 · CP949 자동)
                    고객 데이터 진단 — 칼럼 해석 · 데이터 품질 · 불량 원인 후보 · 손실 금액 리포트 (HTML)
 """
@@ -51,6 +56,21 @@ def main(argv):
     elif cmd == 'stiehl' and len(argv) > 3:
         from .stiehl import main as st_main
         st_main(argv[2:])
+    elif cmd == 'pressfit' and len(argv) > 4:
+        from .pressfit import summarize as pf_sum
+        print(pf_sum(argv[2], argv[3], argv[4]))
+    elif cmd == 'joining' and len(argv) > 3:
+        from .joining import summarize as j_sum
+        for p in j_sum(argv[2], argv[3]):
+            print('→', p)
+    elif cmd == 'mct-pressfit' and len(argv) > 3:
+        from pathlib import Path
+        from .pressfit import run as pf_run
+        root = Path(__file__).resolve().parent.parent
+        lab = argv[argv.index('--screw-label') + 1] if '--screw-label' in argv else 'faulty'
+        dirs = [a for i, a in enumerate(argv[3:], 3) if not a.startswith('--') and argv[i - 1] != '--screw-label']
+        pf_run(argv[2], dirs, root / 'reports', screw_label=lab)
+        print((root / 'reports' / 'mct_pressfit.md').read_text(encoding='utf-8'))
     elif cmd == 'mct' and len(argv) > 2:
         from pathlib import Path
         from .mct import run
@@ -61,6 +81,12 @@ def main(argv):
         print((root / 'reports' / 'mct.md').read_text(encoding='utf-8'))
         if r.get('site'):
             print(f"현장 결과 → {site}/report_site.md (저장소에 넣지 않음)")
+    elif cmd == 'benchmark' and len(argv) > 2:
+        from pathlib import Path
+        from .benchmark import run as bm_run
+        root = Path(__file__).resolve().parent.parent
+        bm_run(argv[2], root / 'reports', root / 'state' / 'base')
+        print((root / 'reports' / 'benchmark.md').read_text(encoding='utf-8'))
     elif cmd == 'diagnose' and len(argv) > 2:
         from pathlib import Path
         import pandas as pd

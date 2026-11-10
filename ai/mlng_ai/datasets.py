@@ -45,6 +45,7 @@ class Table:
     source: str = ''
     series: dict = field(default_factory=dict)      # 비정형 파형: {이름: {'label', 'unit', 'by_lot': {LOT: [값…]}, 'sp', 'tol'}}  (sp 가 dict 면 LOT 별 설정값)
     entity: str = ''             # 적산을 묶는 단위 (공구 · 금형 · 설비 칼럼) — 바뀌면 적산을 0 부터
+    profile: dict = field(default_factory=dict)  # optional versioned process template
 
 
 # ── 공개 데이터 받기

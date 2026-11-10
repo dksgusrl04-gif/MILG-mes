@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from .datasets import Table
+from .profiles import SLOTS as PROFILE_SLOTS, ProfileRuntime
 import re
 
 from .lexicon import ALARM_WORDS, QUANTITY
@@ -29,14 +30,15 @@ from .schema import ColumnSense, leakage_guard, sense_table
 
 QS = list(QUANTITY) + ['unknown']
 ACC_SLOTS = ['acc:native', 'acc:count', 'acc:exposure', 'acc:dose', 'acc:drift', 'acc:spec_dose']
-REL_SLOTS = ['rel:up', 'rel:down', 'rel:mean']      # 교체(리셋) 뒤 처음 N회 대비 변화 — 방향 유지
+REL_QS = ['force', 'torque', 'current', 'load', 'vibration', 'speed', 'power', 'temperature', 'pressure', 'dimension', 'unknown']
+REL_SLOTS = ['rel:up', 'rel:down', 'rel:mean'] + [f'rel:q:{q}' for q in REL_QS]      # 교체(리셋) 뒤 처음 N회 대비 변화 — 방향 유지 · 물리량별
 WAVE_SLOTS = ['wave:dose', 'wave:trend', 'wave:rough']
 TEXT_SLOTS = ['text:risk', 'text:alarm']
 BASE_SLOTS = [f'q:{q}' for q in QS] + ['spread', 'spec', 'event', 'all_max', 'n_out', 'cat_rare', 'load', 'missing'] + ACC_SLOTS + REL_SLOTS + WAVE_SLOTS + TEXT_SLOTS
 UP_SLOTS = ['up:all_max', 'up:n_out', 'up:spec', 'up:spread', 'up:event', 'up:q:temperature', 'up:q:pressure', 'up:q:current', 'up:q:wear', 'up:q:vibration', 'up:q:time',
             'up:acc:dose', 'up:wave:dose', 'up:text:risk']
 GROUPS = {'적산': ACC_SLOTS, '교체 후 변화': REL_SLOTS, '파형': WAVE_SLOTS, '텍스트': TEXT_SLOTS}
-SLOTS = BASE_SLOTS + UP_SLOTS + ['up:has']
+SLOTS = BASE_SLOTS + UP_SLOTS + ['up:has'] + PROFILE_SLOTS
 SLOT_KO = {'spread': '변동(산포) 증가', 'spec': '규격 대비 이탈', 'event': '교체 · 급변 사건', 'all_max': '가장 크게 벗어난 조건', 'n_out': '벗어난 조건 수',
            'cat_rare': '드문 작업자 · 자재 · 설비', 'load': '수량(장입량) 과다', 'missing': '빈 값', 'up:has': '앞 공정 연결 있음',
            'rel:up': '교체 뒤 처음보다 커진 조건', 'rel:down': '교체 뒤 처음보다 작아진 조건', 'rel:mean': '교체 뒤 조건 전반의 변화', 'acc:native': '적산 값 (사용 시간 · 마모)', 'acc:count': '교체 뒤 누적 횟수', 'acc:exposure': '교체 뒤 누적 생산량', 'acc:dose': '누적 이탈량 (작은 이탈이 쌓임)', 'acc:drift': '지속 치우침 (한쪽으로 계속)',
@@ -45,8 +47,12 @@ SLOT_KO = {'spread': '변동(산포) 증가', 'spec': '규격 대비 이탈', 'e
 for q, (ko, _) in QUANTITY.items():
     SLOT_KO[f'q:{q}'] = f'{ko} 이탈'
 SLOT_KO['q:unknown'] = '이름 없는 센서 이탈'
+for q in REL_QS:
+    SLOT_KO[f'rel:q:{q}'] = '교체 뒤 ' + (QUANTITY[q][0] if q in QUANTITY else '이름 없는 센서') + ' 변화'
 for s in UP_SLOTS:
     SLOT_KO[s] = '앞 공정 · ' + SLOT_KO[s[3:]]
+SLOT_KO.update({s: s.replace('profile:', '공정 템플릿: ') for s in PROFILE_SLOTS})
+
 MIN_HIST = 20         # 이보다 적게 쌓이면 «평소» 를 모른다 → 0 (표준편차 추정이 흔들리지 않을 만큼)
 RESET_WORDS = ['교체', '교환', 'changeover', 'change', '정비', 'maintenance', 'reset', 'dress', '드레싱', '점검', 'replace']
 
@@ -73,33 +79,53 @@ REL_REF = 10      # 교체 뒤 처음 몇 회를 «새 것» 기준으로 삼나
 
 
 def relative_change(df: pd.DataFrame, params: list[str], reset: np.ndarray, n_ref: int = REL_REF) -> np.ndarray:
-    """교체(리셋) 뒤 처음 n_ref 회 평균 대비 지금 값의 변화 (부호 유지) ÷ 그 칼럼의 지금까지 표준편차.
+    """교체(리셋) 뒤 처음 n_ref 회 평균 대비 지금 값의 변화 — log(|지금| / |기준|) (부호 유지 · 단위 없음 · 설비가 달라도 같은 크기).
     그 시점까지 본 행만 쓴다: 구간의 p 번째 행은 앞선 min(p, n_ref) 행이 기준 (p = 0 이면 0)."""
     N = len(df)
     seg = np.cumsum(reset) - 1
-    pos = np.arange(N) - np.searchsorted(seg, seg, side='left')
+    start = np.searchsorted(seg, seg, side='left')
+    pos = np.arange(N) - start
+    end = start + np.minimum(pos, n_ref)
     out = np.zeros((N, len(params)))
     for j, c in enumerate(params):
         x = pd.to_numeric(df[c], errors='coerce').to_numpy(float)
-        xf = np.where(np.isfinite(x), x, 0.0); ok = np.isfinite(x).astype(float)
-        s1 = np.concatenate([[0], np.cumsum(xf)[:-1]]); s2 = np.concatenate([[0], np.cumsum(xf * xf)[:-1]]); k = np.concatenate([[0], np.cumsum(ok)[:-1]])
-        sd = np.sqrt(np.maximum(s2 / np.maximum(k, 1) - (s1 / np.maximum(k, 1)) ** 2, 0))          # 지금까지 표준편차 (이전 행만)
-        ref = np.zeros(N)
-        start = np.searchsorted(seg, seg, side='left')
-        cx = np.concatenate([[0], np.cumsum(xf)]); co = np.concatenate([[0], np.cumsum(ok)])
-        end = start + np.minimum(pos, n_ref)
-        cntr = co[end] - co[start]
-        ref = np.where(cntr > 0, (cx[end] - cx[start]) / np.maximum(cntr, 1), np.nan)
-        r = (x - ref) / np.where(sd > 1e-12, sd, np.nan)
-        out[:, j] = np.clip(np.nan_to_num(r), -10, 10)
+        ok = np.isfinite(x)
+        ax = np.abs(np.where(ok, x, 0.0))
+        eps = 1e-3 * (np.median(ax[ok]) if ok.any() else 1.0) + 1e-12
+        cx = np.concatenate([[0], np.cumsum(ax)]); co = np.concatenate([[0], np.cumsum(ok)])
+        cnt = co[end] - co[start]
+        ref = np.where(cnt > 0, (cx[end] - cx[start]) / np.maximum(cnt, 1), np.nan)
+        r = np.log(ax + eps) - np.log(ref + eps)
+        out[:, j] = np.clip(np.where(ok & np.isfinite(ref), r, 0.0), -5, 5)
     return out
 
 
 def accumulate(df, S, t, n, X):
+    """Group entity history before accumulating, preserving A -> B -> A."""
+    ent = find_entity(df, S, t.entity)
+    group_keys = [ent] + [c for c in ('machine_id', 'installation_id') if c in df and c != ent] if ent else []
+    if ent and df.groupby(group_keys, dropna=False).ngroups > 1:
+        nat, count, attribution = [], 0, None
+        for _, positions in df.groupby(group_keys, sort=False, dropna=False).indices.items():
+            positions = np.asarray(positions)
+            local = X.iloc[positions].copy().reset_index(drop=True)
+            ns, _, nr, aw = _accumulate_contiguous(
+                df.iloc[positions].reset_index(drop=True), S, t, n[positions], local, entity=ent)
+            X.iloc[positions] = local.to_numpy()
+            nat, count = ns, count + nr
+            if aw:
+                if attribution is None:
+                    attribution = (aw[0], np.zeros(len(df), int), np.zeros(len(df), int))
+                attribution[1][positions], attribution[2][positions] = aw[1], aw[2]
+        return nat, ent, count, attribution
+    return _accumulate_contiguous(df, S, t, n, X)
+
+
+def _accumulate_contiguous(df, S, t, n, X, entity=''):
     N = len(df)
     reset = np.zeros(N, bool); reset[0] = True
     why = []
-    ent = find_entity(df, S, t.entity)
+    ent = entity or find_entity(df, S, t.entity)
     if ent:
         v = df[ent].astype(str).to_numpy(); reset[1:] |= v[1:] != v[:-1]; why.append(ent)
     for c, sv in S.items():
@@ -111,7 +137,7 @@ def accumulate(df, S, t, n, X):
         rng = np.nanmax(x) - np.nanmin(x) if np.isfinite(x).any() else 0
         if rng > 0:
             reset[1:] |= np.nan_to_num(np.diff(x)) < -0.4 * rng
-    has_reset = reset[1:].any()
+    has_reset = bool(ent) or reset[1:].any()
     cnt = np.zeros(N); expo = np.zeros(N); dose = np.zeros(N); sdose = np.zeros(N)
     # 누적 이탈량: 칼럼마다 CUSUM (평소보다 0.5σ 넘게 벗어난 만큼만 쌓임) → 가장 많이 쌓인 칼럼
     params = [c for c, sv in S.items() if sv.role == 'param' and sv.stat in ('level', 'spread')]
@@ -144,6 +170,10 @@ def accumulate(df, S, t, n, X):
     if has_reset and params:
         R = relative_change(df, params, reset)
         X['rel:up'], X['rel:down'], X['rel:mean'] = R.max(1), (-R).max(1), R.mean(1)
+        for qn in REL_QS:                                     # 물리량별 평균 변화 (부호 유지) — 채널 정보를 덜 잃는다
+            idx = [j for j, c in enumerate(params) if S[c].quantity == qn]
+            if idx:
+                X[f'rel:q:{qn}'] = R[:, idx].mean(1)
     if has_reset:
         X['acc:count'] = cnt                                  # 교체 뒤 몇 번째인가 (뒤에서 공정 안 σ 로 맞춤)
         if n.max() > 1:                                       # 수량이 행마다 다를 때만 (한 개 단위면 횟수와 같음)
@@ -277,6 +307,9 @@ def outcome_vector(s: pd.Series, cs: ColumnSense) -> np.ndarray:
 
 def encode(t: Table, overrides: dict | None = None, llm: bool = False) -> Encoded:
     df = t.df
+    if t.profile:
+        raw_columns = ['tightening steps', t.profile['signal'], t.profile['axis'], 'confirmed_normal']
+        df = df.drop(columns=raw_columns, errors='ignore')
     S = sense_table(df, t.meta, overrides=overrides, llm=llm, process=t.process)
     oc = [c for c, s in S.items() if s.role == 'outcome']
     if not oc:
@@ -290,7 +323,7 @@ def encode(t: Table, overrides: dict | None = None, llm: bool = False) -> Encode
 
     params = [c for c, s in S.items() if s.role == 'param']
     Z = {c: expanding_z(pd.to_numeric(df[c], errors='coerce').to_numpy(float)) for c in params if S[c].stat != 'event'}
-    X = pd.DataFrame(0.0, index=df.index, columns=BASE_SLOTS)
+    X = pd.DataFrame(0.0, index=df.index, columns=BASE_SLOTS + PROFILE_SLOTS)
     who = {}
     for q in QS:
         cs = [c for c in Z if S[c].quantity == q and S[c].stat == 'level']     # 적산 값은 acc:native 로 따로
@@ -332,8 +365,16 @@ def encode(t: Table, overrides: dict | None = None, llm: bool = False) -> Encode
     # 비정형
     waves = wave_features(t, lot, X, who)
     texts = text_features(df, S, y, n, X, who)
+    profile_info = []
+    if t.profile:
+        runtime = ProfileRuntime(t.profile, 'table-local')
+        for i, row in enumerate(t.df.to_dict('records')):
+            r = runtime.observe(row)
+            for slot, value in r['features'].items():
+                X.loc[df.index[i], slot] = value
+            profile_info.append({k: r[k] for k in ('available', 'baseline_status', 'template_hash')})
     enc = Encoded(t, S, X, y, n, lot, who, leak)
-    enc.info = {'entity': ent, 'resets': nres, 'accum_cols': nat, 'waves': waves, 'texts': texts}
+    enc.info = {'entity': ent, 'resets': nres, 'accum_cols': nat, 'waves': waves, 'texts': texts, 'profile': profile_info}
     return enc
 
 
@@ -360,7 +401,7 @@ def add_upstream(encs: dict[str, Encoded]) -> None:
                     if vals:
                         U.iat[i, U.columns.get_loc(s)] = float(np.max(vals))
                 src[i] = sorted({k for k, _ in ps})
-        e.X = pd.concat([e.X[BASE_SLOTS], U], axis=1)
+        e.X = pd.concat([e.X[BASE_SLOTS + PROFILE_SLOTS], U], axis=1)
         e.detail['_up'] = src
 
 
@@ -368,7 +409,7 @@ def standardize(X: pd.DataFrame) -> pd.DataFrame:
     """슬롯을 공정 안에서 «평소보다 몇 σ» 로 (누적 · 이전 행 기준). 0/1 표시 슬롯은 그대로"""
     out = X.copy()
     for c in X.columns:
-        if c == 'up:has':
+        if c in ('up:has', 'profile:available', 'profile:baseline_ready'):
             continue
         v = X[c].to_numpy(float)
         if np.nanstd(v) < 1e-12:

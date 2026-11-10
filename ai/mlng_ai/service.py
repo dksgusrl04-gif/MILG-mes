@@ -17,11 +17,16 @@
 from __future__ import annotations
 
 import datetime as dt
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows local engine execution
+    fcntl = None
+    import msvcrt
 import json
 import shutil
 import re
 import threading
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -33,6 +38,8 @@ from .engine import poisson_dev
 from .features import SLOT_KO, SLOTS, encode, standardize
 from .model import CumulativeModel
 from .schema import sense_table
+from .routing import Router
+from .process_context import analyze, recognize, choose_registered_process, family
 
 KEY = re.compile(r'^[a-z][a-z0-9_]{1,31}$')
 
@@ -42,6 +49,7 @@ class Service:
         self.dir = Path(state_dir)
         (self.dir / 'rows').mkdir(parents=True, exist_ok=True)
         self.path = self.dir / 'model.json'
+        self.router = Router(self.dir)
         self.lock = threading.Lock()
         if self.path.exists():
             self.M = CumulativeModel.load(self.path)
@@ -53,19 +61,32 @@ class Service:
     @contextmanager
     def _exclusive(self):
         """서버 작업자(프로세스)가 여럿이어도 한 번에 하나만 갱신 — 파일 잠금 + 최신 상태 다시 읽기"""
-        with self.lock, open(self.dir / '.lock', 'w') as lf:
-            fcntl.flock(lf, fcntl.LOCK_EX)
+        with self.lock, open(self.dir / '.lock', 'a+b') as lf:
+            if fcntl is not None:
+                fcntl.flock(lf, fcntl.LOCK_EX)
+            else:
+                lf.seek(0, 2)
+                if lf.tell() == 0:
+                    lf.write(b'0'); lf.flush()
+                lf.seek(0); msvcrt.locking(lf.fileno(), msvcrt.LK_LOCK, 1)
             try:
                 if self.path.exists():
                     self.M = CumulativeModel.load(self.path)
                 yield
             finally:
-                fcntl.flock(lf, fcntl.LOCK_UN)
+                if fcntl is not None:
+                    fcntl.flock(lf, fcntl.LOCK_UN)
+                else:
+                    lf.seek(0); msvcrt.locking(lf.fileno(), msvcrt.LK_UNLCK, 1)
 
     def status(self) -> dict:
         if self.path.exists():
             self.M = CumulativeModel.load(self.path)
-        return {'version': self.M.version, 'processes': [{'key': p, 'rows': self.M.seen.get(p, 0), 'gate': round(self.M.gate_weight(p), 3),
+        pilot = None
+        if (self.dir / 'pilot-active.json').exists():
+            from .pilot import PilotEngine
+            pilot = PilotEngine(self.dir).status()
+        return {'version': self.M.version, 'pilot': pilot, 'model_routes': self.router.routes(), 'processes': [{'key': p, 'rows': self.M.seen.get(p, 0), 'gate': round(self.M.gate_weight(p), 3),
                                                           'base_rate': self.M.base_rate(p)} for p in self.M.procs]}
 
     @staticmethod
@@ -73,10 +94,13 @@ class Service:
         return [s.to_dict() for s in sense_table(df, meta or {}).values()]
 
     def update(self, process: str, df: pd.DataFrame, meta: dict | None = None, time_col: str | None = None) -> dict:
+        self._check_pilot_training(process)
         if not KEY.match(process):
             raise ValueError('공정 키는 영문 소문자 · 숫자 · _ (2~32자)')
         if len(df) == 0:
             raise ValueError('행이 없습니다')
+        if process in self.router.routes():
+            raise ValueError('Registered specialist model: train a separate candidate and register its validated bundle')
         with self._exclusive():
             hp = self.dir / 'rows' / f'{process}.csv'
             old = pd.read_csv(hp) if hp.exists() else pd.DataFrame()
@@ -117,13 +141,47 @@ class Service:
         new = np.arange(len(old), len(allr))
         return e, Xs[new], e.n[new], new
 
-    def predict(self, process: str, df: pd.DataFrame, meta: dict | None = None, top: int = 3) -> dict:
+    def analyze_process(self, df: pd.DataFrame, process: str = '', template_id: str | None = None) -> dict:
+        if len(df) == 0:
+            raise ValueError('No rows supplied')
+        result = analyze(df, process, template_id)
+        result['registered_candidates'] = [
+            {'process':k,'input_contract':r['input_contract'],'synthetic':r['synthetic']}
+            for k,r in self.router.routes().items()
+            if k == process or (result['recognition']['family'] and
+                family(k) == result['recognition']['family'])]
+        return result
+
+    def predict(self, process: str, df: pd.DataFrame, meta: dict | None = None, top: int = 3, template_id: str | None = None) -> dict:
         if not KEY.match(process):
             raise ValueError('공정 키는 영문 소문자 · 숫자 · _ (2~32자)')
         if len(df) == 0:
             raise ValueError('행이 없습니다')
+        if (self.dir / 'pilot-active.json').exists() and template_id is None:
+            from .pilot import PilotEngine
+            pilot = PilotEngine(self.dir)
+            if process == 'auto' or process in pilot.manifest['processes']:
+                result = pilot.predict(process, df.to_dict('records'), (meta or {}).get('context'))
+                if process != 'auto' or result.get('mode') != 'needs_confirmation':
+                    return result
+        context = recognize(df, '' if process == 'auto' else process)
+        if context['status'] in ('conflict', 'needs_confirmation'):
+            return {'mode':'needs_confirmation','recognition':context,'rows':[]}
+        if process == 'auto':
+            chosen = choose_registered_process(context, self.router.routes(), df)
+            if chosen is None:
+                return self.analyze_process(df, '', template_id)
+            process = chosen
+        if template_id:
+            preview = self.analyze_process(df, process, template_id)
+            # Existing weights were not trained with this requested recipe.
+            # Return calculations without silently changing the model's inputs.
+            return preview
         if self.path.exists():
             self.M = CumulativeModel.load(self.path)
+        routed = self.router.predict(process, df)
+        if routed is not None:
+            return routed
         e, X, n, new = self._encode_new(process, df, meta)
         known = process in self.M.procs and self.M.seen.get(process, 0) > 0
         if known:
@@ -202,7 +260,65 @@ class Service:
             allr.to_csv(hp, index=False)
             return {'process': process, 'added': int(len(df)), 'rows': int(len(allr))}
 
+    def workflow(self, process: str, df: pd.DataFrame, meta: dict | None = None,
+                 template_id: str | None = None, save_input: bool = False) -> dict:
+        """Receive → recognize/template → infer → persist a sensor-free review event."""
+        if len(df) == 0:
+            raise ValueError('행이 없습니다')
+        if not isinstance(save_input, bool):
+            raise ValueError('save_input은 true/false여야 합니다')
+        recognition = recognize(df, '' if process == 'auto' else process)
+        prediction = self.predict(process, df, meta, template_id=template_id)
+        event_id = uuid.uuid4().hex
+        now = dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
+        if save_input:
+            selected = prediction.get('process') or process
+            if selected == 'auto' or not KEY.match(selected):
+                raise ValueError('공정이 확정된 경우에만 원본 입력을 적재할 수 있습니다')
+            ingest_result = self.ingest(selected, df, meta)
+        else:
+            ingest_result = None
+        event = {'event_id': event_id, 'created_at': now,
+                 'process': prediction.get('process') or process,
+                 'recognition': recognition,
+                 'template': prediction.get('template'),
+                 'prediction': prediction,
+                 'input_rows': int(len(df)),
+                 'input_sha256': __import__('hashlib').sha256(
+                     df.to_json(orient='records', date_format='iso', force_ascii=False).encode('utf-8')).hexdigest(),
+                 'raw_input_saved': bool(save_input)}
+        events = self.dir / 'events'
+        events.mkdir(parents=True, exist_ok=True)
+        with self._exclusive():
+            (events / f'{event_id}.json').write_text(
+                json.dumps(event, ensure_ascii=False, default=float), encoding='utf-8')
+        return {**event, 'ingest': ingest_result}
+
+    def record_feedback(self, event_id: str, action: str, actor: str,
+                        outcome: str = 'unknown', note: str = '') -> dict:
+        """Append an operator disposition without changing model weights."""
+        if not re.fullmatch(r'[a-f0-9]{32}', event_id):
+            raise ValueError('유효하지 않은 event_id')
+        if action not in {'investigate', 'defer', 'accept', 'dismiss'}:
+            raise ValueError('action은 investigate/defer/accept/dismiss 중 하나여야 합니다')
+        if outcome not in {'unknown', 'pass', 'fail'}:
+            raise ValueError('outcome은 unknown/pass/fail 중 하나여야 합니다')
+        actor = str(actor).strip()
+        if not actor or len(actor) > 80 or len(note) > 1000:
+            raise ValueError('담당자(1~80자)와 메모(최대 1000자)를 확인하세요')
+        event_path = self.dir / 'events' / f'{event_id}.json'
+        if not event_path.is_file():
+            raise ValueError('이 테넌트에서 찾을 수 없는 추론 event_id입니다')
+        record = {'feedback_id': uuid.uuid4().hex, 'event_id': event_id,
+                  'created_at': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds'),
+                  'action': action, 'outcome': outcome, 'actor': actor, 'note': note.strip()}
+        with self._exclusive():
+            with open(self.dir / 'feedback.jsonl', 'a', encoding='utf-8') as f:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+        return record
+
     def train_candidate(self, process: str, meta: dict | None = None, holdout: float = 0.3, budget: float = 0.1) -> dict:
+        self._check_pilot_training(process)
         from .evaluate import alert_metrics, rank_quality, score_model, skill
         if not KEY.match(process):
             raise ValueError('공정 키는 영문 소문자 · 숫자 · _ (2~32자)')
@@ -244,6 +360,12 @@ class Service:
                                     'eval': {'active': cur, 'candidate': new}, 'recommend': 'promote' if better else 'keep', 'status': 'candidate'}
             self._save_reg(reg)
             return json.loads(json.dumps({'version': vid, **reg['versions'][vid]}, default=float))
+
+    def _check_pilot_training(self, process):
+        if (self.dir / 'pilot-active.json').exists():
+            from .pilot import PilotEngine
+            if process in PilotEngine(self.dir).manifest['processes']:
+                raise ValueError('Pilot route: use the versioned pilot builder; press-fit references use pilot calibrate with inspected cycles')
 
     def promote(self, version: str, by: str = '') -> dict:
         with self._exclusive():

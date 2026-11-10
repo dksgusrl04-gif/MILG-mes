@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "screw_tightening",
+  "version": "1.0.0",
+  "kind": "screw",
+  "signal": "torque",
+  "axis": "angle",
+  "stage": "Thread forming",
+  "condition_keys": ["part_number", "screw_type", "program"],
+  "baseline": {"min_samples": 10, "confirmation": "operator_confirmed", "freeze": true},
+  "engineering_limits": {},
+  "evaluation_label_rule": {"purpose": "benchmark_only", "target": "explicit_choice_of_faulty_or_nok", "production_threshold": null},
+  "claims": {"causal_effects": false, "automatic_machine_control": false},
+  "input_contract": "Torque in N.m, angle in degrees. Match stage name explicitly; missing stages are unavailable, never normal. Integral is torque-angle area, not work in joules."
+}

@@ -1,0 +1,21 @@
+{
+  "dataset": "hmotp_cuts.csv",
+  "target": "measured wear >= 200 um, benchmark only",
+  "calibration": "first 10 cuts per tool, measured normal; excluded from scoring",
+  "split": "leave one physical tool out",
+  "template": "mct_endmill relative reference scenario on precomputed RMS",
+  "variants": {
+    "common_summary": {
+      "auc": 0.9486005984861821,
+      "recall": 0.6956521739130435,
+      "false_positive_rate": 0.03643724696356275,
+      "test": 270
+    },
+    "summary_plus_template": {
+      "auc": 0.9081147685266678,
+      "recall": 0.6521739130434783,
+      "false_positive_rate": 0.048582995951417005,
+      "test": 270
+    }
+  }
+}

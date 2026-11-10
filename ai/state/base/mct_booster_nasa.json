@@ -1,0 +1,39 @@
+{
+ "kind": "process_booster",
+ "cols": [
+  "depth_of_cut",
+  "feed",
+  "smcAC",
+  "smcDC",
+  "vib_table",
+  "vib_spindle",
+  "AE_table",
+  "AE_spindle"
+ ],
+ "rel": true,
+ "rel_n": 10,
+ "fa": 0.05,
+ "threshold": 0.05166425320106524,
+ "medians": {
+  "depth_of_cut": 0.75,
+  "feed": 0.25,
+  "smcAC": 1.64,
+  "smcDC": 6.468,
+  "vib_table": 0.919,
+  "vib_spindle": 0.29,
+  "AE_table": 0.194,
+  "AE_spindle": 0.23
+ },
+ "model_file": "mct_booster_nasa.joblib",
+ "dataset": "NASA Ames Milling (공구 16개)",
+ "cv_auc": 0.933125,
+ "cv_ops": {
+  "tools": 15,
+  "missed": 3,
+  "miss_rate": 0.2,
+  "lead_median": 1.0,
+  "lead_min_median": 3.5,
+  "fa_rate": 0.34,
+  "early_rate": 0.34
+ }
+}

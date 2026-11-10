@@ -333,7 +333,31 @@ async def ai_update(req: Request):
 @app.post('/ai/v1/predict')
 async def ai_predict(req: Request):
     """학습 없이 위험도 — {process, rows | csv} → 행마다 기대 불량 · 확률 · 키운 쪽. 처음 보는 공정은 공통 효과로 위험 순위"""
-    return await _ai_call(req, 'predict', 2_000_000, lambda S, b, df, m: S.predict(str(b.get('process', '')), df, m))
+    return await _ai_call(req, 'predict', 2_000_000, lambda S, b, df, m: S.predict(str(b.get('process', '')), df, m, template_id=b.get('template_id')))
+
+
+@app.post('/ai/v1/analyze-process')
+async def ai_analyze_process(req: Request):
+    return await _ai_call(req, 'analyze-process', 2_000_000,
+        lambda S, b, df, m: S.analyze_process(df, str(b.get('process', '')), b.get('template_id')))
+
+
+@app.post('/ai/v1/workflow')
+async def ai_workflow(req: Request):
+    """현장 1회 입력 → 공정/템플릿 인식 → 추론 → 검토 이벤트 저장.
+    Raw input is not retained unless save_input=true; feedback never trains automatically.
+    """
+    return await _ai_call(req, 'workflow', 4_000_000,
+        lambda S, b, df, m: S.workflow(str(b.get('process', 'auto')), df, m,
+            template_id=b.get('template_id'), save_input=b.get('save_input', False)), rate=30)
+
+
+@app.post('/ai/v1/feedback')
+async def ai_feedback(req: Request):
+    """담당자 검토 결과를 해당 테넌트에 기록. 모델 가중치는 변경하지 않는다."""
+    return await _ai_ops(req, 'feedback', lambda S, b: S.record_feedback(
+        str(b.get('event_id', '')), str(b.get('action', '')), str(b.get('actor', '')),
+        str(b.get('outcome', 'unknown')), str(b.get('note', ''))))
 
 
 @app.post('/ai/v1/diagnose')

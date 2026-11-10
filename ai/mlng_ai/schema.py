@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass, field
 import numpy as np
 import pandas as pd
 
-from .lexicon import ACCUM, GOOD_POLARITY, TEXT_WORDS, OUTCOME_DETAIL, QUANTITY, ROLE_WORDS, SETPOINT, SPREAD, UNIT
+from .lexicon import ACCUM, BAD_POLARITY, GOOD_POLARITY, TEXT_WORDS, OUTCOME_DETAIL, QUANTITY, ROLE_WORDS, SETPOINT, SPREAD, UNIT
 
 DIM = 512
 
@@ -158,7 +158,8 @@ def sense(name: str, values: pd.Series, label: str = '', unit: str = '') -> Colu
 
     cs = ColumnSense(name=name, role=role, confidence=conf, unit=u, label=label, why=why)
     if role == 'outcome':
-        cs.polarity = -1 if _kw_hit(words, text, GOOD_POLARITY) >= 2 or any(g in text for g in ('합격', '양품')) else 1
+        good = _kw_hit(words, text, GOOD_POLARITY) >= 2 or any(g in text.replace('불합격', '') for g in ('합격', '양품'))
+        cs.polarity = -1 if good and _kw_hit(words, text, BAD_POLARITY) < 2 else 1
         if cs.polarity < 0:
             why.append('«좋은 쪽» 이름 → 부호 반대')
     if role != 'param':

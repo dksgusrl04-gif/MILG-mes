@@ -77,6 +77,32 @@
   }
 
   // ── 3. 처음 보는 공정
+  // MCT 공구 모델 — 기준선 비교(같은 검증 방식) + MES 데모 가공 기록에 적용한 결과
+  function vMct() {
+    const m = A.mct;
+    if (!m) return '<div class="card"><div class="empty">MCT 공구 모델 결과 없음 — ai/ 에서 python -m mlng_ai export-mct</div></div>';
+    const o = m.ops, ts = Object.entries(m.tools), win = r => r.boost == null || r.engine >= r.boost;
+    const cell = (v, on) => v == null ? '<span class="muted">—</span>' : on ? `<b>${f(v, 2)}</b>` : f(v, 2);
+    return `<div class="card"><h2>기준선 비교 <span class="h2sub">구분력(AUC) · 공구 누적 사용량 제외</span></h2>
+        <div class="tbx"><table class="tb xtab"><colgroup><col><col class="c-rk"><col class="c-gate"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-rk"></colgroup>
+        <thead><tr><th>데이터</th><th>규모</th><th>검증</th><th class="n">단순 규칙</th><th class="n">MILG 엔진</th><th class="n">범용 부스팅</th><th>엔진 입력</th></tr></thead><tbody>
+        ${m.bench.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.size)}</td><td>${esc(r.unit)}</td><td class="n">${cell(r.rule)}</td><td class="n">${cell(r.engine, win(r))}</td><td class="n">${cell(r.boost, !win(r))}</td><td>${esc(r.input)}</td></tr>`).join('')}</tbody></table></div>
+        <p class="note">굵게 = 더 높은 쪽. 범용 부스팅은 비교 기준 — 엔진 계산에는 들어가지 않습니다. 다른 설비로 옮기면 엔진 0.88 · 부스팅 0.97.</p></div>
+      <div class="grid g21" style="margin-top:16px">
+        <div class="card"><h2>MES 가공 기록 적용 <span class="h2sub">${esc(m.engine)} · 정답 ${esc(m.label)}</span></h2>
+          <div class="tbx"><table class="tb xtab"><colgroup><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col></colgroup>
+          <thead><tr><th>공구</th><th class="n">가공</th><th class="n">알림</th><th class="n">주의 기준</th><th class="n">교체 기준</th><th>결과</th></tr></thead><tbody>
+          ${ts.map(([id, t]) => { const late = t.limit_run != null && t.lead == null; return `<tr class="click" data-row="mach:${esc(id)}"><td><b>${esc(id)}</b></td><td class="n">${t.runs.length}회</td><td class="n">${t.alert_run != null ? t.alert_run + '회차' : '—'}</td>
+            <td class="n">${t.warn_run != null ? t.warn_run + '회차' : '—'}</td><td class="n">${t.limit_run != null ? t.limit_run + '회차' : '—'}</td>
+            <td>${t.lead != null ? `<span class="tag j-ok">교체 기준 ${t.lead}회 전</span>` : late ? `<span class="tag j-danger">${t.alert_run != null ? '교체 기준 이후' : '알림 없음'}</span>` : '<span class="muted">교체 기준 미도달</span>'}</td></tr>`; }).join('')}</tbody></table></div>
+          <p class="note">공구 하나를 통째로 빼고 나머지 공구로 학습한 엔진이 그 공구의 가공마다 위험도를 매깁니다. 알림 = ${esc(m.alert_rule)}. 행을 누르면 공구 상세가 열립니다.</p></div>
+        <div class="card"><h2>요약</h2><dl class="stat"><dt>공구 · 가공</dt><dd>${m.n_tools}개 · ${m.n_runs}회</dd><dt>구분력 (AUC)</dt><dd>${f(m.auc, 2)}</dd>
+          <dt>먼저 알림</dt><dd>교체 기준 도달 ${o.over}개 중 ${o.caught}개</dd><dt>놓침</dt><dd>${o.over - o.caught}개</dd><dt>알림 시점</dt><dd>교체 기준 ${f(o.lead_min, 0)}~${f(o.lead_max, 0)}회 전 · 중앙값 ${f(o.lead_median, 0)}회</dd>
+          <dt>정상 가공 알림</dt><dd>${pct(o.false_alarm, 0)}</dd><dt>알림 기준</dt><dd>학습 공구 정상 가공 95% 분위</dd><dt>계산</dt><dd>${esc(m.built)}</dd></dl>
+          <p class="note">${esc(m.source)}</p></div>
+      </div>`;
+  }
+
   function vCold() {
     const ks = Object.keys(A.cold_start || {});
     if (!ks.length) return '<div class="card" style="margin-top:16px"><div class="empty">검증 결과 없음 — python -m mlng_ai train (빠른 모드 아님)</div></div>';
@@ -212,8 +238,8 @@
     load();
     if (err) return `<div class="card"><div class="empty">${esc(err)}</div></div>`;
     if (!A) return '<div class="card"><div class="empty">공정 통합 AI 결과를 불러오는 중…</div></div>';
-    const body = { schema: vSchema, learn: vLearn, cold: vCold, raw: vRaw, trace: vTrace, dx: vDiag }[st.tab] || vSchema;
-    return `${kpis()}<div class="spc-sub" style="margin-top:12px">${M.seg('xa', 'tab|' + st.tab, [['tab|schema', '칼럼 해석'], ['tab|learn', '누적 학습'], ['tab|cold', '처음 보는 공정'], ['tab|raw', '적산 · 비정형'], ['tab|trace', '원인 추적'], ['tab|dx', '데이터 진단']])}
+    const body = { schema: vSchema, learn: vLearn, mct: vMct, cold: vCold, raw: vRaw, trace: vTrace, dx: vDiag }[st.tab] || vSchema;
+    return `${kpis()}<div class="spc-sub" style="margin-top:12px">${M.seg('xa', 'tab|' + st.tab, [['tab|schema', '칼럼 해석'], ['tab|learn', '누적 학습'], ['tab|mct', 'MCT 공구 모델'], ['tab|cold', '처음 보는 공정'], ['tab|raw', '적산 · 비정형'], ['tab|trace', '원인 추적'], ['tab|dx', '데이터 진단']])}
       <span class="muted" style="font-size:12px;margin-left:auto">${esc(A.version)} · ${esc(A.built)}</span></div>${body()}`;
   };
   const wrap = fn => () => { load(); if (err) return `<div class="card"><div class="empty">${esc(err)}</div></div>`;

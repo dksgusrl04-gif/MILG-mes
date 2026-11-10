@@ -43,15 +43,19 @@ def test_mlng_tables_encode():
 
 
 def test_cumulative_update_and_roundtrip():
-    r = np.random.default_rng(1)
-    X = r.normal(size=(400, len(SLOTS)))
-    y = r.poisson(np.exp(-3 + 0.8 * X[:, 0]))
+    # Rare count outcomes with many nuisance features need enough events to
+    # test effect recovery. Per-column streams keep the signal fixed as slots grow.
+    size = 4000
+    X = np.column_stack([np.random.default_rng(100+j).normal(size=size) for j in range(len(SLOTS))])
+    y = np.random.default_rng(5).poisson(np.exp(-3 + 0.8 * X[:, 0]))
     M = CumulativeModel(SLOTS)
     M.add_process('p', y.mean())
-    for ix in np.array_split(np.arange(400), 8):
+    M.binary['p'] = False  # Known count-generating experiment, not Bernoulli data.
+    for ix in np.array_split(np.arange(size), 8):
         M.update([('p', X[ix], y[ix], np.ones(len(ix)))])
     eff = M.process_effects('p')['effects'][0]
     assert eff['lo'] > 1.2                              # 심은 효과 exp(0.8)=2.2 를 찾음 (90% 하한)
+    assert eff['lo'] < np.exp(0.8) < eff['hi']  # Recovery must also cover the true effect.
     M2 = CumulativeModel.from_dict(M.to_dict())
     assert np.allclose(M2.predict('p', X[:5], np.ones(5))[0], M.predict('p', X[:5], np.ones(5))[0])
 

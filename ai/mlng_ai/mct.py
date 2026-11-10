@@ -29,15 +29,16 @@ import pandas as pd
 from .datasets import Table
 from .engine import auc, chunks, spearman
 from .evaluate import alert_metrics
-from .features import SLOTS, add_upstream, encode, standardize
+from .features import REL_SLOTS, SLOTS, add_upstream, encode, standardize
 from .model import CumulativeModel
 from .normal import NormalBaseline, condition_columns
 
 HERE = Path(__file__).resolve().parent.parent
 WEB = HERE.parent / 'web' / 'data'
-WEAR_UM = 200.0
-VB_MM = 0.2
-STIEHL_UM = 120.0     # 저자 정의 수명 끝(VB ≈ 150 µm)의 80% — 교체 임박. 모든 공구에 사건이 생기는 가장 높은 기준
+_EVALUATION_LABELS = json.loads((HERE / 'profiles' / 'evaluation_labels.json').read_text(encoding='utf-8'))
+WEAR_UM = _EVALUATION_LABELS['hmotp']['threshold']
+VB_MM = _EVALUATION_LABELS['nasa']['threshold']
+STIEHL_UM = _EVALUATION_LABELS['stiehl']['threshold']     # 저자 정의 수명 끝(VB ≈ 150 µm)의 80% — 교체 임박. 모든 공구에 사건이 생기는 가장 높은 기준
 RULES = {}
 SHORT = {'mct_hmotp': 'HMoTP', 'mct_nasa': 'NASA', 'mct_stiehl': 'Stiehl'}
 CH = {'F_x': ('절삭력 X', 'N'), 'F_y': ('절삭력 Y', 'N'), 'F_z': ('절삭력 Z', 'N'), 'M_z': ('토크 모멘트 Z', 'N·m'),
@@ -62,6 +63,7 @@ def hmotp_table(path, thr_um: float = WEAR_UM) -> tuple[Table, pd.DataFrame]:
         k, _, s = c.rpartition('_')
         if k in CH and s in ST:
             meta[c] = {'label': f'{CH[k][0]} {ST[s]}', 'unit': '' if s == 'kurt' else CH[k][1]}
+    RULES['mct_hmotp'] = f'평균 마모 ≥ {thr_um:g} µm'
     df = raw.drop(columns=['cut_id', 'cut_no', 'wear_um', 'wear_flute1_um', 'wear_flute2_um'])
     df['use_count'] = raw.groupby('tool_id').cumcount() + 1
     meta['use_count'] = {'label': '공구 누적 사용 횟수'}
@@ -85,6 +87,7 @@ def nasa_table(thr_mm: float = VB_MM, demo: Path | None = None) -> tuple[Table, 
     meta = {'tool_ng': {'label': f'공구 교체 필요 (VB ≥ {thr_mm:g} mm)'}, 'tool_id': {'label': '공구 번호'}, 'cut_minutes': {'label': '공구 누적 가공 시간', 'unit': 'min'},
             'depth_of_cut': {'label': '절삭 깊이', 'unit': 'mm'}, 'feed': {'label': '이송량', 'unit': 'mm/rev'}, 'work_material': {'label': '피삭재 재질'}}
     meta.update({k: {'label': v} for k, v in sig.items()})
+    RULES['mct_nasa'] = f'VB ≥ {thr_mm:g} mm'
     df = raw.drop(columns=['vb_mm'])
     return Table('mct_nasa', 'MCT 정면 밀링 (NASA)', df, meta, {}, '', {}, 'row', 'NASA Ames Milling (공구 16개)', entity='tool_id'), raw
 
@@ -107,17 +110,21 @@ def stiehl_table(path, thr_um: float = STIEHL_UM) -> tuple[Table, pd.DataFrame]:
 
 
 USAGE_COLS = {'use_count', 'cut_minutes', 'contact_min'}
+VARIANTS = ('sensor', 'rel', 'usage')
+VNAME = {'sensor': '센서만 (모든 슬롯)', 'rel': '센서만 · 교체 후 변화', 'usage': '센서 + 공구 누적 사용량'}
 USAGE_SLOTS = ['acc:count', 'acc:exposure', 'acc:native']     # 사용 횟수 · 시간 자체 — 센서에서 나온 누적 이탈(acc:dose · drift)은 센서 정보라 남긴다
 
 
 def _encode(t: Table, variant: str):
-    if variant == 'sensor':
+    if variant in ('sensor', 'rel'):
         t = Table(t.key, t.process, t.df.drop(columns=[c for c in USAGE_COLS if c in t.df]), t.meta, t.spec, t.lot_col, t.parents, t.unit_kind, t.source, t.series, t.entity)
     e = encode(t)
     add_upstream({t.key: e})
     Xs = standardize(e.X)[SLOTS]
-    if variant == 'sensor':
+    if variant in ('sensor', 'rel'):
         Xs[USAGE_SLOTS] = 0.0
+    if variant == 'rel':                       # 교체 후 변화만 — 설비가 바뀌어도 같은 크기로 읽히는 입력
+        Xs[[c for c in SLOTS if c not in REL_SLOTS]] = 0.0
     return e, Xs.to_numpy()
 
 
@@ -223,17 +230,19 @@ def run(data_dir: str | Path, out_dir: Path, state_dir: Path, site_dir: str | Pa
     sraw = None
     if st.exists():
         tables['mct_stiehl'], sraw = stiehl_table(st, stiehl_um)
-    cv = {v: tool_cv(tables, v) for v in ('sensor', 'usage')}
-    best = max(cv, key=lambda v: np.mean([cv[v][k]['joint']['capture'] for k in tables]))
+    cv = {v: tool_cv(tables, v) for v in VARIANTS}
+    best = max(('sensor', 'rel'), key=lambda v: np.mean([cv[v][k]['joint']['auc'] for k in tables]))     # 기본 모델은 센서 입력 중 AUC 평균이 높은 쪽
     M = train_base(tables, best)
     state_dir.mkdir(parents=True, exist_ok=True)
     base = {'process': 'MCT', 'variant': best, 'label_rules': {k: RULES[k] for k in tables},
             'datasets': {k: t.source for k, t in tables.items()}, 'cv': {v: {k: {m: cv[v][k][m]['capture'] for m in ('rule', 'local', 'joint')} for k in tables} for v in cv},
-            'model': M.to_dict()}
+            'model': M.to_dict(),
+            'transfer_model': train_base(tables, 'rel').to_dict(),          # 다른 설비로 옮길 때 쓰는 입력(교체 후 변화만)
+            'transfer_note': '새 설비 · 새 공장에는 transfer_model 로 시작 — 설비별 AUC 0.91~0.93 (Stiehl 설비 단위 교차검증)'}
     (state_dir / 'mct.json').write_text(json.dumps(base, ensure_ascii=False), encoding='utf-8')
     res = {'cv': cv, 'best': best, 'rules': {k: RULES[k] for k in tables}, 'normal_hmotp': normal_check_hmotp(hraw, th)}
     if sraw is not None:      # 다른 설비로 옮겼을 때 — 설비 하나를 통째로 빼고 학습 → 그 설비로 평가
-        res['machine_cv'] = {v: tool_cv(tables, v, groups={'mct_stiehl': sraw.machine_id.to_numpy()}, only=['mct_stiehl'])['mct_stiehl'] for v in ('sensor', 'usage')}
+        res['machine_cv'] = {v: tool_cv(tables, v, groups={'mct_stiehl': sraw.machine_id.to_numpy()}, only=['mct_stiehl'])['mct_stiehl'] for v in VARIANTS}
     cnc = data_dir / 'cnc_experiment_01.csv'
     if cnc.exists():
         S = __import__('mlng_ai.schema', fromlist=['sense_table']).sense_table(pd.read_csv(cnc))
@@ -265,7 +274,7 @@ def report_md(r: dict) -> str:
     L = ['# MCT 기본 모델 — 공구 단위 교차검증', '',
          '정답 규칙: ' + ' · '.join(f"{SHORT.get(k, k)} {v}" for k, v in r.get('rules', {}).items()) + ' → 공구 교체 필요. 한 공구를 통째로 빼고 학습 → 뺀 공구로 평가, 공구마다 반복.',
          '값: 위험도 상위 10% 알림 안에 들어온 불량 비율 (AUC). 최대 가능 = 알림 수 ÷ 불량 수 (불량이 많으면 10% 알림으로 다 담을 수 없음). 규칙 = 가장 크게 벗어난 조건 하나 · 자체 = 그 데이터만 · 합침 = HMoTP + NASA 함께 학습(데이터별 보정).', '']
-    for v, name in (('sensor', '센서만'), ('usage', '센서 + 공구 누적 사용량')):
+    for v, name in VNAME.items():
         L += [f'## 입력: {name}', '', '| 데이터 | 공구 · 행 · 불량 | 최대 가능 | 규칙 | 자체 | 합침 |', '|---|---|---|---|---|---|']
         for k, x in r['cv'][v].items():
             mx = min(1.0, x['rule']['alerts'] / x['events']) if x['events'] else None
@@ -274,12 +283,13 @@ def report_md(r: dict) -> str:
     if r.get('machine_cv'):
         L += ['## 다른 설비로 옮겼을 때 (Stiehl · 설비 3대)', '', '설비 하나를 통째로 빼고 나머지 설비로 학습 → 뺀 설비로 평가. 합침 = 다른 공개 MCT 데이터까지 함께 학습.', '',
               '| 입력 | 행 · 불량 | 규칙 | 자체 | 합침 | 설비별 AUC (자체) |', '|---|---|---|---|---|---|']
-        for v, name in (('sensor', '센서만'), ('usage', '센서 + 누적 사용량')):
+        for v, name in VNAME.items():
             x = r['machine_cv'][v]
             L.append(f"| {name} | {x['rows']} · {x['events']} | " + ' | '.join(f"{_p(x[m]['capture'])} ({_a(x[m]['auc'])})" for m in ('rule', 'local', 'joint'))
                      + ' | ' + ' · '.join(f"{f['tool']} {_a(f['local'])}" for f in x['folds']) + ' |')
         L.append('')
-    L += [f"기본 모델로 저장한 입력: {'센서만' if r['best'] == 'sensor' else '센서 + 공구 누적 사용량'} (합침 기준 평균이 높은 쪽)", '']
+    L += [f"기본 모델로 저장한 입력: {VNAME[r['best']]} (센서 입력 중 합침 AUC 평균이 높은 쪽)",
+          '«교체 후 변화» = 공구 교체 뒤 처음 10회 대비 지금 값의 변화(log 비율, 방향 유지, 물리량별). 설비마다 단위 · 크기가 달라도 같은 척도로 읽힌다.', '']
     n = r['normal_hmotp']
     L += ['## 정상 기준 모드 — 정답 있는 HMoTP 로 방법 검증', '',
           f"공구마다 처음 {n['ref_cuts']}회(새 공구)를 정상 기준으로 학습 · 조건 칼럼 {n['cols']}개 · 평가 {n['test_rows']}회 (교체 필요 {n['events']}회)", '',

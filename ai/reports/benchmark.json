@@ -1,0 +1,562 @@
+{
+ "HMoTP · 공구 단위": {
+  "rows": 300,
+  "events": 23,
+  "models": {
+   "rule": {
+    "auc": 0.6892167634594255,
+    "capture10": 0.08695652173913043
+   },
+   "eng_sensor": {
+    "auc": 0.8695652173913043,
+    "capture10": 0.4782608695652174,
+    "ops": {
+     "tools": 3,
+     "missed": 1,
+     "miss_rate": 0.3333333333333333,
+     "lead_median": 44.5,
+     "lead_min_median": null,
+     "fa_rate": 0.021660649819494584,
+     "early_rate": 0.0036101083032490976
+    }
+   },
+   "eng_rel": {
+    "auc": 0.7554544027625176,
+    "capture10": 0.17391304347826086,
+    "ops": {
+     "tools": 3,
+     "missed": 2,
+     "miss_rate": 0.6666666666666666,
+     "lead_median": 13.0,
+     "lead_min_median": null,
+     "fa_rate": 0.018050541516245487,
+     "early_rate": 0.0
+    }
+   },
+   "eng_local": {
+    "auc": 0.9773975827970491,
+    "capture10": 0.782608695652174,
+    "ops": {
+     "tools": 3,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 63.0,
+     "lead_min_median": null,
+     "fa_rate": 0.09386281588447654,
+     "early_rate": 0.007220216606498195
+    }
+   },
+   "lr": {
+    "auc": 0.9879139852456443,
+    "capture10": 0.8695652173913043,
+    "ops": {
+     "tools": 3,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 9.0,
+     "lead_min_median": null,
+     "fa_rate": 0.061371841155234655,
+     "early_rate": 0.0
+    }
+   },
+   "rf": {
+    "auc": 0.9549521268246743,
+    "capture10": 0.6956521739130435,
+    "ops": {
+     "tools": 3,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 5.0,
+     "lead_min_median": null,
+     "fa_rate": 0.09747292418772563,
+     "early_rate": 0.0
+    }
+   },
+   "gb": {
+    "auc": 0.9628001883534767,
+    "capture10": 0.6521739130434783,
+    "ops": {
+     "tools": 3,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 74.0,
+     "lead_min_median": null,
+     "fa_rate": 0.06859205776173286,
+     "early_rate": 0.010830324909747292
+    }
+   },
+   "rf_rel": {
+    "auc": 0.9512635379061372,
+    "capture10": 0.6956521739130435,
+    "ops": {
+     "tools": 3,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 9.0,
+     "lead_min_median": null,
+     "fa_rate": 0.11913357400722022,
+     "early_rate": 0.0036101083032490976
+    }
+   },
+   "gb_rel": {
+    "auc": 0.9727672264950558,
+    "capture10": 0.6956521739130435,
+    "ops": {
+     "tools": 3,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 37.0,
+     "lead_min_median": null,
+     "fa_rate": 0.10108303249097472,
+     "early_rate": 0.010830324909747292
+    }
+   },
+   "gb_slot": {
+    "auc": 0.7692669910532098,
+    "capture10": 0.4782608695652174,
+    "ops": {
+     "tools": 3,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 53.0,
+     "lead_min_median": null,
+     "fa_rate": 0.08303249097472924,
+     "early_rate": 0.02888086642599278
+    }
+   },
+   "gb_slot_rel": {
+    "auc": 0.7314393344843824,
+    "capture10": 0.2608695652173913,
+    "ops": {
+     "tools": 3,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 52.0,
+     "lead_min_median": null,
+     "fa_rate": 0.07581227436823104,
+     "early_rate": 0.007220216606498195
+    }
+   }
+  }
+ },
+ "NASA · 공구 단위": {
+  "rows": 146,
+  "events": 96,
+  "models": {
+   "rule": {
+    "auc": 0.3746875,
+    "capture10": 0.08333333333333333
+   },
+   "eng_sensor": {
+    "auc": 0.9002083333333334,
+    "capture10": 0.15625,
+    "ops": {
+     "tools": 15,
+     "missed": 10,
+     "miss_rate": 0.6666666666666666,
+     "lead_median": 1.0,
+     "lead_min_median": 3.0,
+     "fa_rate": 0.06,
+     "early_rate": 0.06
+    }
+   },
+   "eng_rel": {
+    "auc": 0.8952083333333334,
+    "capture10": 0.15625,
+    "ops": {
+     "tools": 15,
+     "missed": 9,
+     "miss_rate": 0.6,
+     "lead_median": 0.5,
+     "lead_min_median": 1.5,
+     "fa_rate": 0.08,
+     "early_rate": 0.08
+    }
+   },
+   "eng_local": {
+    "auc": 0.9496875,
+    "capture10": 0.14583333333333334,
+    "ops": {
+     "tools": 15,
+     "missed": 6,
+     "miss_rate": 0.4,
+     "lead_median": 1.0,
+     "lead_min_median": 3.0,
+     "fa_rate": 0.22,
+     "early_rate": 0.22
+    }
+   },
+   "lr": {
+    "auc": 0.9583333333333334,
+    "capture10": 0.15625,
+    "ops": {
+     "tools": 15,
+     "missed": 7,
+     "miss_rate": 0.4666666666666667,
+     "lead_median": 0.5,
+     "lead_min_median": 1.5,
+     "fa_rate": 0.08,
+     "early_rate": 0.08
+    }
+   },
+   "rf": {
+    "auc": 0.8979166666666667,
+    "capture10": 0.15625,
+    "ops": {
+     "tools": 15,
+     "missed": 3,
+     "miss_rate": 0.2,
+     "lead_median": 1.0,
+     "lead_min_median": 4.0,
+     "fa_rate": 0.28,
+     "early_rate": 0.28
+    }
+   },
+   "gb": {
+    "auc": 0.9402083333333333,
+    "capture10": 0.15625,
+    "ops": {
+     "tools": 15,
+     "missed": 1,
+     "miss_rate": 0.06666666666666667,
+     "lead_median": 1.5,
+     "lead_min_median": 5.5,
+     "fa_rate": 0.38,
+     "early_rate": 0.38
+    }
+   },
+   "rf_rel": {
+    "auc": 0.9489583333333333,
+    "capture10": 0.15625,
+    "ops": {
+     "tools": 15,
+     "missed": 4,
+     "miss_rate": 0.26666666666666666,
+     "lead_median": 0.0,
+     "lead_min_median": 0.0,
+     "fa_rate": 0.2,
+     "early_rate": 0.2
+    }
+   },
+   "gb_rel": {
+    "auc": 0.933125,
+    "capture10": 0.15625,
+    "ops": {
+     "tools": 15,
+     "missed": 3,
+     "miss_rate": 0.2,
+     "lead_median": 1.0,
+     "lead_min_median": 3.5,
+     "fa_rate": 0.34,
+     "early_rate": 0.34
+    }
+   },
+   "gb_slot": {
+    "auc": 0.8364583333333333,
+    "capture10": 0.15625,
+    "ops": {
+     "tools": 15,
+     "missed": 2,
+     "miss_rate": 0.13333333333333333,
+     "lead_median": 2.0,
+     "lead_min_median": 9.0,
+     "fa_rate": 0.6,
+     "early_rate": 0.6
+    }
+   },
+   "gb_slot_rel": {
+    "auc": 0.8115625,
+    "capture10": 0.15625,
+    "ops": {
+     "tools": 15,
+     "missed": 5,
+     "miss_rate": 0.3333333333333333,
+     "lead_median": 1.0,
+     "lead_min_median": 4.5,
+     "fa_rate": 0.28,
+     "early_rate": 0.28
+    }
+   }
+  }
+ },
+ "Stiehl · 공구 단위": {
+  "rows": 6418,
+  "events": 875,
+  "models": {
+   "rule": {
+    "auc": 0.7225314811473931,
+    "capture10": 0.264
+   },
+   "eng_sensor": {
+    "auc": 0.8692563593721812,
+    "capture10": 0.37257142857142855,
+    "ops": {
+     "tools": 9,
+     "missed": 6,
+     "miss_rate": 0.6666666666666666,
+     "lead_median": 517.0,
+     "lead_min_median": 2899.0,
+     "fa_rate": 0.004871008479162909,
+     "early_rate": 0.00036081544290095615
+    }
+   },
+   "eng_rel": {
+    "auc": 0.903579392283704,
+    "capture10": 0.44342857142857145,
+    "ops": {
+     "tools": 9,
+     "missed": 3,
+     "miss_rate": 0.3333333333333333,
+     "lead_median": 48.0,
+     "lead_min_median": 279.5,
+     "fa_rate": 0.02255096518130976,
+     "early_rate": 0.0009020386072523904
+    }
+   },
+   "eng_local": {
+    "auc": 0.9482177263472591,
+    "capture10": 0.43885714285714283,
+    "ops": {
+     "tools": 9,
+     "missed": 1,
+     "miss_rate": 0.1111111111111111,
+     "lead_median": 124.5,
+     "lead_min_median": 710.5,
+     "fa_rate": 0.12917192855854231,
+     "early_rate": 0.0036081544290095615
+    }
+   },
+   "lr": {
+    "auc": 0.9798489729646143,
+    "capture10": 0.632,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 39.0,
+     "lead_min_median": 237.0,
+     "fa_rate": 0.07595165073065127,
+     "early_rate": 0.0
+    }
+   },
+   "rf": {
+    "auc": 0.9834567150331177,
+    "capture10": 0.6502857142857142,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 96.0,
+     "lead_min_median": 560.0,
+     "fa_rate": 0.14937759336099585,
+     "early_rate": 0.0131697636658849
+    }
+   },
+   "gb": {
+    "auc": 0.9843637019664442,
+    "capture10": 0.6651428571428571,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 73.0,
+     "lead_min_median": 427.0,
+     "fa_rate": 0.07216308858019123,
+     "early_rate": 0.0
+    }
+   },
+   "rf_rel": {
+    "auc": 0.9810522409216257,
+    "capture10": 0.6331428571428571,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 136.0,
+     "lead_min_median": 787.0,
+     "fa_rate": 0.21414396536171748,
+     "early_rate": 0.02255096518130976
+    }
+   },
+   "gb_rel": {
+    "auc": 0.9874073348625035,
+    "capture10": 0.6937142857142857,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 97.0,
+     "lead_min_median": 559.0,
+     "fa_rate": 0.10319321666967346,
+     "early_rate": 0.0
+    }
+   },
+   "gb_slot": {
+    "auc": 0.897088528646169,
+    "capture10": 0.48342857142857143,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 312.0,
+     "lead_min_median": 1781.0,
+     "fa_rate": 0.36749052859462383,
+     "early_rate": 0.06440555655782068
+    }
+   },
+   "gb_slot_rel": {
+    "auc": 0.9048164738022216,
+    "capture10": 0.3954285714285714,
+    "ops": {
+     "tools": 9,
+     "missed": 2,
+     "miss_rate": 0.2222222222222222,
+     "lead_median": 115.0,
+     "lead_min_median": 650.0,
+     "fa_rate": 0.07974021288111131,
+     "early_rate": 0.0009020386072523904
+    }
+   }
+  }
+ },
+ "Stiehl · 설비 단위 (다른 설비로 이전)": {
+  "rows": 6418,
+  "events": 875,
+  "models": {
+   "rule": {
+    "auc": 0.5944273601195845,
+    "capture10": 0.08685714285714285
+   },
+   "eng_sensor": {
+    "auc": 0.8056660395350635,
+    "capture10": 0.42628571428571427,
+    "ops": {
+     "tools": 9,
+     "missed": 6,
+     "miss_rate": 0.6666666666666666,
+     "lead_median": 127.0,
+     "lead_min_median": 731.0,
+     "fa_rate": 0.06657044921522641,
+     "early_rate": 0.0007216308858019123
+    }
+   },
+   "eng_rel": {
+    "auc": 0.8845670987861137,
+    "capture10": 0.45257142857142857,
+    "ops": {
+     "tools": 9,
+     "missed": 3,
+     "miss_rate": 0.3333333333333333,
+     "lead_median": 92.5,
+     "lead_min_median": 528.5,
+     "fa_rate": 0.027782789103373624,
+     "early_rate": 0.00036081544290095615
+    }
+   },
+   "eng_local": {
+    "auc": 0.7198809309038426,
+    "capture10": 0.11314285714285714,
+    "ops": {
+     "tools": 9,
+     "missed": 6,
+     "miss_rate": 0.6666666666666666,
+     "lead_median": 416.0,
+     "lead_min_median": 2361.0,
+     "fa_rate": 0.2058452101749955,
+     "early_rate": 0.08118347465271514
+    }
+   },
+   "lr": {
+    "auc": 0.7520086595706297,
+    "capture10": 0.5542857142857143,
+    "ops": {
+     "tools": 9,
+     "missed": 3,
+     "miss_rate": 0.3333333333333333,
+     "lead_median": 250.5,
+     "lead_min_median": 1421.0,
+     "fa_rate": 0.20440194840339165,
+     "early_rate": 0.00847916290817247
+    }
+   },
+   "rf": {
+    "auc": 0.9312930079121672,
+    "capture10": 0.44,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 513.0,
+     "lead_min_median": 2905.0,
+     "fa_rate": 0.7503157135125383,
+     "early_rate": 0.3324914306332311
+    }
+   },
+   "gb": {
+    "auc": 0.9671600216489266,
+    "capture10": 0.5942857142857143,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 77.0,
+     "lead_min_median": 452.0,
+     "fa_rate": 0.11924950387876601,
+     "early_rate": 0.0
+    }
+   },
+   "rf_rel": {
+    "auc": 0.9559987629184815,
+    "capture10": 0.45371428571428574,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 285.0,
+     "lead_min_median": 1624.0,
+     "fa_rate": 0.43333934692404835,
+     "early_rate": 0.11852787299296409
+    }
+   },
+   "gb_rel": {
+    "auc": 0.973860673693977,
+    "capture10": 0.5565714285714286,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 97.0,
+     "lead_min_median": 569.0,
+     "fa_rate": 0.1506404474111492,
+     "early_rate": 0.008118347465271514
+    }
+   },
+   "gb_slot": {
+    "auc": 0.8632180613901703,
+    "capture10": 0.32,
+    "ops": {
+     "tools": 9,
+     "missed": 0,
+     "miss_rate": 0.0,
+     "lead_median": 312.0,
+     "lead_min_median": 1769.0,
+     "fa_rate": 0.36767093631607434,
+     "early_rate": 0.10301280894822298
+    }
+   },
+   "gb_slot_rel": {
+    "auc": 0.8001069044612252,
+    "capture10": 0.2937142857142857,
+    "ops": {
+     "tools": 9,
+     "missed": 5,
+     "miss_rate": 0.5555555555555556,
+     "lead_median": 174.5,
+     "lead_min_median": 996.5,
+     "fa_rate": 0.06224066390041494,
+     "early_rate": 0.0025257081003066933
+    }
+   }
+  }
+ }
+}

@@ -126,8 +126,47 @@ DNS A 레코드 → 서버 IP, `.env` 에 `DOMAIN=` · `LETSENCRYPT_EMAIL=` → 
 | `POST /ai/v1/models/promote` | 승인 `{version, by}` — 운영 교체, 이전 모델 백업 |
 | `POST /ai/v1/models/rollback` | 복구 `{by}` |
 | `POST /ai/v1/diagnose` | 데이터 진단 `{csv, unit_cost, name, format:'html'}` — 칼럼 해석 · 품질 · 불량 원인 후보 · 손실 금액 리포트 |
+| `POST /ai/v1/workflow` | 현장 입력 `{process, rows, template_id?, save_input?}` — 공정 확인 · 템플릿 계산 · 추론 · 검토 이벤트 생성. 기본은 원본 센서 미보관 |
+| `POST /ai/v1/feedback` | 작업자 검토 `{event_id, action, actor, outcome?, note?}` — 테넌트 감사기록에 추가, 자동 재학습 없음 |
 
 인증: 헤더 `X-MLNG-Key: mlng_…` (또는 `Authorization: Bearer …`). 키 원문은 서버에 저장하지 않는다(SHA-256 만).
+
+### 현장 추론과 담당자 확인 흐름
+
+`workflow`는 `predict`를 한 번 실행하고 해당 테넌트의 `events/<event_id>.json`에 공정 인식 결과, 적용 템플릿/모델 식별 정보, 출력, 행 수와 입력 SHA-256만 기록한다. 센서 원문은 기본 저장하지 않는다. MES 이력으로 남길 필요가 있고 내부 보존 정책이 승인된 경우에만 `save_input:true`를 전달한다. 이 경우 `rows/<process>.csv`에 원문 입력이 추가된다.
+
+담당자는 반환된 `event_id`로 `feedback`을 호출한다. `action`은 `investigate`, `defer`, `accept`, `dismiss`; `outcome`은 `unknown`, `pass`, `fail`이다. 피드백은 `feedback.jsonl`에 추가되며 모델 파라미터나 임계값을 바꾸지 않는다. 피드백을 학습에 쓰려면 별도 라벨 검토와 후보 모델 평가 절차를 거쳐야 한다.
+
+예시:
+
+```json
+POST /ai/v1/workflow
+{
+  "process": "auto",
+  "rows": [{
+    "machine_id": "M1",
+    "tool_id": "T-08",
+    "installation_id": "I-2026-11-06-01",
+    "part_number": "P-100",
+    "screw_type": "M8",
+    "program": "PRG-7",
+    "tightening steps": [{"name": "Thread forming", "graph": {
+      "torque values": [0.3, 0.8, 1.4], "angle values": [0, 12, 31]
+    }}]
+  }]
+}
+
+POST /ai/v1/feedback
+{
+  "event_id": "<workflow가 반환한 event_id>",
+  "action": "investigate",
+  "actor": "현장 담당자",
+  "outcome": "unknown",
+  "note": "체결 곡선과 부품 이력 확인"
+}
+```
+
+현재 이것은 서버 코드의 로컬 기능이다. 실제 고객 MES 연결에는 고객별 입력 어댑터, 인증 키 배포, 보존/접근 권한 합의, UI의 이벤트/피드백 호출 및 배포가 추가로 필요하다. 템플릿 프리뷰만 가능한 경우 응답의 `mode`에 그 상태가 명시되고, 실측 기반 품질 확률로 표현하지 않는다.
 월 한도를 넘으면 402, 키가 틀리면 401. 키 파일이 없으면 데모용 «열린 모드», 운영은 `.env` 에 `AI_REQUIRE_KEY=1`.
 
 ```bash

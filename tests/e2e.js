@@ -45,8 +45,26 @@ const ok = (c, m) => { if (c) pass++; else fails.push(m); console.log(`${c ? '�
   await p.click('#aiw [data-aiw="reg"]'); await W(200);
   ok(await ev(() => !!document.querySelector('#aiw .aiw-done')) && (await ev(() => +(document.querySelector('#aiw .aiw-badge')?.innerText || 0))) === n0 - 1, '조사 등록 → 처리 상태 · 미처리 수 감소');
   await p.click('#aiw [data-aiw="undo"]'); await W(200);
+  // MCT 공구 항목 — 엔진 위험도 알림 → 공구 상세
+  ok(await ev(() => { const t = MLNG.aiWidget.items()[0]; return t && t.k === 'mct' && /위험도/.test(document.querySelector('#aiw .aiw-panel').innerText); }), 'MILG AI 패널 — MCT 공구 위험도 항목');
+  ok(await ev(() => !!document.querySelector('#aiw .aiw-chart .ln') && document.querySelectorAll('#aiw .aiw-cand').length > 0), 'MILG AI 패널 — 원인 후보 카드 · 가공 회차별 위험도 그림');
+  await p.click('#aiw [data-tab="det"]'); await W(200);
+  ok(await ev(() => { const t = document.querySelector('#aiw .aiw-body').innerText; return /공구를 통째로 빼고/.test(t) && /구분력/.test(t) && /누적 사용량 제외/.test(t); }), 'MILG AI 패널 — 상세 근거 탭 (검증 방식 · 구분력)');
+  await p.click('#aiw [data-aiw="hold"]'); await p.click('#aiw [data-tab="hist"]'); await W(200);
+  ok(await ev(() => document.querySelectorAll('#aiw .aiw-h').length === 1 && /보류/.test(document.querySelector('#aiw .aiw-h').innerText)), 'MILG AI 패널 — 조치 이력 탭');
+  await p.click('#aiw [data-aiw="undo"]'); await p.click('#aiw [data-tab="sum"]'); await W(200);
+  await p.click('#aiw [data-aiw="more"]'); await W(400);
+  ok(await ev(() => document.querySelector('#drawer').classList.contains('on') && /MILG 위험도/.test(document.querySelector('#dbody').innerText)), '공구 상세 분석 → 공구 서랍의 MILG 위험도');
+  await ev(() => document.querySelector('#shade').click()); await W(200);
+  await ev(() => MLNG.aiContext(MLNG.aiWidget.items().find(r => r.k !== 'mct').id)); await W(300);
   await p.click('#aiw [data-aiw="more"]'); await W(400);
   ok(await ev(() => MLNG.cur === 'tx_lots'), '상세 분석 → LOT 원인 추적');
+  await go('mach_home'); await W();
+  ok(await ev(() => /MILG 위험도/.test(document.querySelector('#view').innerText) && /먼저 알림/.test(document.querySelector('#view').innerText)), 'MCT 현황 — MILG 위험도 · 엔진 검증');
+  await go('mach_tools'); await W();
+  ok(await ev(() => /MILG 알림/.test(document.querySelector('#view').innerText) && /교체 기준 \d+회 전/.test(document.querySelector('#view').innerText)), '공구 수명 — MILG 알림 칸');
+  await go('xai'); await W(); await p.click('[data-xa="tab|mct"]'); await W();
+  ok(await ev(() => { const t = document.querySelector('#view').innerText; return /기준선 비교/.test(t) && /범용 부스팅/.test(t) && /MES 가공 기록 적용/.test(t); }), '공정 통합 AI — MCT 공구 모델 탭');
   await p.click('#aiw .aiw-panel header [data-aiw="toggle"]'); await W(200);
 
   // 2.0 신뢰 계층

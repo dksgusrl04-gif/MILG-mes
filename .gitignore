@@ -7,3 +7,4 @@ __pycache__/
 supabase/.temp/
 bt/
 node_modules/
+_to_delete/

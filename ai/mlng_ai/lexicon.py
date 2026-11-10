@@ -51,6 +51,7 @@ ALARM_WORDS = ['이상', '소음', '진동', '떨림', '누설', '누유', '과�
                'noise', 'vibration', 'chatter', 'leak', 'overheat', 'crack', 'broken', 'jam', 'stuck', 'worn', 'burr', 'defect', 'alarm', 'smoke', 'spark']
 # 결과 칼럼 중 «합격 · 양품» 처럼 1 이 좋은 쪽인 이름 (부호를 뒤집는다)
 GOOD_POLARITY = ['ok', 'pass', 'good', 'noband', 'no band', '합격', '양품', 'normal']
+BAD_POLARITY = ['ng', 'nok', 'nio', 'fail', 'failure', 'defect', 'reject', 'bad', 'scrap', '불량', '불합격', '부적합', '아님', '이상']      # 이름에 함께 있으면 «좋은 쪽» 단어가 있어도 사건 쪽 (예: «OK 아님», 불합격)
 # 결과의 «세부 유형» (TWF · HDF 같은 고장 모드) — 결과와 같은 사건을 다르게 적은 것이라 입력으로 쓰면 누설
 OUTCOME_DETAIL = ['twf', 'hdf', 'pwf', 'osf', 'rnf', 'mode', 'defect type', 'fault', 'cause', '유형', '사유']
 

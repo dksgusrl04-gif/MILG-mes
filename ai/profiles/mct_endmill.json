@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "mct_endmill",
+  "version": "1.0.0",
+  "kind": "mct",
+  "signal": "cut_load",
+  "axis": "time_seconds",
+  "condition_keys": ["material", "operation", "rpm", "feed", "depth"],
+  "baseline": {"min_samples": 10, "confirmation": "operator_confirmed", "freeze": true},
+  "engineering_limits": {},
+  "evaluation_label_rule": {"purpose": "benchmark_only", "source": "dataset_specific", "production_threshold": null},
+  "claims": {"causal_effects": false, "automatic_machine_control": false},
+  "input_contract": "Only actual cutting segments; cut_load units must remain fixed within a profile version. Installation ID changes only on physical replacement or confirmed life reset."
+}

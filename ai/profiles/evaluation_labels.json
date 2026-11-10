@@ -1,0 +1,7 @@
+{
+  "purpose": "offline_benchmark_labels_only",
+  "production_replacement_policy": null,
+  "hmotp": {"quantity": "mean_flank_wear", "unit": "um", "threshold": 200.0},
+  "nasa": {"quantity": "flank_wear", "unit": "mm", "threshold": 0.2},
+  "stiehl": {"quantity": "flank_wear", "unit": "um", "threshold": 120.0}
+}

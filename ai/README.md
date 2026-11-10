@@ -1,5 +1,7 @@
 # MLNG 공정 통합 AI (`mlng_ai`)
 
+현장 연결용 파일럿 설치·실행·기업별 학습은 [PILOT_GUIDE_KO.md](PILOT_GUIDE_KO.md)를 참고하세요. `tools/Prepare-MilgPilot.ps1`로 검증 후 활성화하고 `tools/Start-MilgPilot.ps1`로 로컬 콘솔을 실행합니다. 공개 모델 시험과 현장 품질 검증은 구분해 표시합니다.
+
 공정마다 다른 칼럼을 **이름 · 설명 · 단위 · 값 모양으로 해석**해 공통 엔진 + 공정별 기본 모델에서 출발하고, 공장마다 **그 고객 내부에서 허용된 데이터로만** 이어서 학습해 앞 공정까지 **원인 후보**를 제시하는 모델. 고객 간 결과는 공유하지 않는다.
 
 ```
@@ -44,6 +46,12 @@ python -m pytest -q              # 시험
 - 결과: [reports/mct.md](reports/mct.md)
 - Stiehl 2023 밀링 데이터(Mendeley zpxs87bjt8 v3, 설비 3대 × 공구 9개, h5 6,418개): `python -m mlng_ai stiehl <h5 폴더> <요약 폴더>` 로 가공 1회 = 한 행 요약(`stiehl_runs.csv`)을 만든 뒤 같은 `mct` 명령에 넣으면 함께 학습 · 평가하고, «설비 하나를 빼고 학습 → 그 설비로 평가» 도 추가로 낸다. 정답 기준 기본 VB ≥ 120 µm (`--vb` 로 변경).
 - «교체 후 변화» 슬롯(`rel:up · rel:down · rel:mean`): 공구 · 금형 교체(리셋) 뒤 처음 10회 평균 대비 지금 값의 변화를 **방향을 살려** 본다. 기존 슬롯은 «평소보다 얼마나 벗어났나» 를 절댓값으로 봐서, 새 공구로 바뀌며 값이 떨어지는 것도 이상으로 읽었다. 저장된 옛 모델은 불러올 때 새 슬롯을 효과 0 으로 끼워 넣어 그대로 쓴다.
+
+## 압입 기본 모델 · MCT 와 합친 모델 (`pressfit.py`)
+- 데이터(CC BY 4.0): Delta 로봇 바퀴 림 조립(Zenodo 13641620, 힘 · 토크 6축, 3 · 4일차 라벨 무효로 제외) · CERTH 스냅핏 삽입(Zenodo 1209203).
+- 곡선 1개 = 한 행 요약 (최대 · 최소 · 평균 · 표준편차 · 마지막 구간 · 최대 위치 · 기울기 · 봉우리 수). 곡선 길이는 넣지 않는다 — 실패하면 일찍 멈추는 기록이라 정답을 흘린다.
+- `python -m mlng_ai pressfit <Delta CSV> <스냅핏 zip> <요약 폴더>` → `python -m mlng_ai mct-pressfit <MCT 요약 폴더> <압입 요약 폴더>` → [reports/mct_pressfit.md](reports/mct_pressfit.md)
+- 평가: 따로 · 같은 공정 합침 · MCT + 압입 합침을 같은 조건(묶음 단위 교차검증)으로 비교.
 
 ## 공장별 모델 운영 (`service.py`)
 `ingest` 데이터 적재(학습 없음) → `train_candidate` 후보 모델 학습 · 이후 구간에서 운영 모델과 비교 → `promote` 승인(운영 교체, 이전 모델 백업) → `rollback` 복구. 기록: `versions/` · `registry.json`. MES 화면: 더보기 › 분석 › **공정 통합 AI**.

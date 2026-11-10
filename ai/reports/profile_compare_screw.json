@@ -1,0 +1,24 @@
+{
+  "dataset": "s04_variations-in-assembly-conditions-2.zip",
+  "target": "experimental condition faulty (not product defect)",
+  "split": "held-out workpiece SHA256 modulo 5",
+  "train": 4043,
+  "test": 921,
+  "excluded_unavailable": 1,
+  "template_hash": "f156bcc40683ed7053685d45aa390dffcfc82d8e61deb7966095e3d1837ad51f",
+  "calibration": "training control samples only; offline benchmark",
+  "variants": {
+    "common_summary": {
+      "auc": 0.5954804925225268,
+      "recall": 0.21063829787234042,
+      "false_positive_rate": 0.04434589800443459,
+      "threshold": 0.9617718913964485
+    },
+    "summary_plus_template": {
+      "auc": 0.6431806387696372,
+      "recall": 0.30425531914893617,
+      "false_positive_rate": 0.04212860310421286,
+      "threshold": 0.8265117867988151
+    }
+  }
+}
