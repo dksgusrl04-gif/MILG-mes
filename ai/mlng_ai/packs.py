@@ -167,10 +167,11 @@ def _json_rows(fh, chunk: int = 1 << 23):
 
 
 def _nums(s: str) -> np.ndarray:
-    v = np.fromstring(s, sep=',')
-    if len(v) != s.count(',') + 1:                     # null 이 섞인 행
-        v = np.array([np.nan if x.strip() in ('null', 'NaN', '') else float(x) for x in s.split(',')], float)
-    return v
+    p = s.split(',')
+    try:
+        return np.array(p, dtype=float)
+    except ValueError:                                  # null 이 섞인 행
+        return np.array([np.nan if x.strip() in ('null', 'NaN', '') else float(x) for x in p], float)
 
 
 def summarize_press_fineblank(pack: Path, dst: Path, tmp: Path, every: int = 5) -> Path | None:
