@@ -195,3 +195,13 @@ def test_field_gate_rejects_uninformative_features(installed):
     report=a.train_field('pressfit',payload()['context'])
     assert report['installed'] is False
     assert a.status()['counts']['field_models'] == 0
+
+def test_review_is_separate_from_inspection_labels(installed):
+    a,b=installed
+    a.submit(payload())
+    record=a.review('0','investigate','quality-owner','Check actual tool')
+    assert record['training_performed'] is False
+    assert a.status()['counts']['reviews']==1
+    assert a.status()['counts']['feedback']==0
+    with pytest.raises(ValueError):b.review('0','hold','quality-owner')
+    with pytest.raises(ValueError):a.review('0','pass','quality-owner')

@@ -91,6 +91,8 @@ class PilotEngine:
                 CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, request_hash TEXT NOT NULL,
                   created TEXT NOT NULL, process TEXT NOT NULL, scope TEXT NOT NULL,
                   lot TEXT NOT NULL, request TEXT NOT NULL, result TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS reviews(id INTEGER PRIMARY KEY, event TEXT NOT NULL,
+                  created TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, note TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS feedback(id INTEGER PRIMARY KEY, event TEXT NOT NULL,
                   created TEXT NOT NULL, actor TEXT NOT NULL, outcome TEXT NOT NULL,
                   evidence TEXT NOT NULL, note TEXT NOT NULL);
@@ -113,7 +115,7 @@ class PilotEngine:
     def status(self):
         with self.db() as db:
             counts = {table: db.execute('SELECT COUNT(*) FROM '+table).fetchone()[0]
-                      for table in ('events', 'feedback', 'baselines', 'field_models')}
+                      for table in ('events', 'feedback', 'baselines', 'field_models', 'reviews')}
         return {'release': self.manifest['id'], 'mode': 'pilot',
                 'processes': self.manifest['processes'], 'counts': counts,
                 'field_validated': False, 'state': str(self.state)}
@@ -207,6 +209,8 @@ class PilotEngine:
                     row['alert'] = None
             result['probability_note'] = ('Public benchmark estimate in source target units' if continuous else
                 'Dataset classifier score; not calibrated to this factory or independent joint strength')
+            if result.get('target') == 'ddacs_sim_min_thickness_mm':
+                result['probability_note'] = 'Synthetic FEM surrogate: OP10 minimum thickness after springback in mm'
             if result.get('target') == 'press_pump_anomaly_score':
                 result['probability_note'] = 'Pump anomaly score; higher means farther from the learned normal reference'
         result.update(release=self.manifest['id'], field_validated=False,
@@ -374,6 +378,18 @@ class PilotEngine:
                         serialized, json.dumps(result, ensure_ascii=False, allow_nan=False)))
         return result
 
+    def review(self,event_id,action,actor,note=''):
+        if action not in ('investigate','hold') or not isinstance(actor,str) or not actor.strip() or len(actor)>100:
+            raise ValueError('Valid review action and actor required')
+        if not isinstance(note,str) or len(note)>2000:
+            raise ValueError('Review note too long')
+        with self.db() as db:
+            if not db.execute('SELECT 1 FROM events WHERE id=?',(event_id,)).fetchone():
+                raise ValueError('Unknown cycle_id in this tenant')
+            cur=db.execute('INSERT INTO reviews(event,created,actor,action,note) VALUES(?,?,?,?,?)',
+                           (event_id,now(),actor,action,note))
+        return {'review_id':cur.lastrowid,'event_id':event_id,'action':action,'training_performed':False}
+
     def feedback(self, event_id, outcome, actor, evidence, note=''):
         if outcome not in ('pass', 'fail', 'unknown') or not isinstance(actor, str) or not actor.strip():
             raise ValueError('outcome pass/fail/unknown and actor required')
@@ -419,7 +435,7 @@ class PilotEngine:
         return {'baseline_id': identity, **artifact}
 
 
-def serve(state, port):
+def serve(state, port, allowed_origins=()):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     engine = PilotEngine(state)
     token_path = Path(state)/'pilot-token.txt'
@@ -427,11 +443,16 @@ def serve(state, port):
         token_path.write_text(secrets.token_urlsafe(32), encoding='utf-8')
     token = token_path.read_text(encoding='utf-8').strip()
     page = (Path(__file__).parent/'pilot_ui.html').read_bytes()
+    widget = (Path(__file__).resolve().parents[2]/'web'/'milg-widget.js').read_bytes()
 
     class Handler(BaseHTTPRequestHandler):
         def respond(self, code, data, content_type='application/json; charset=utf-8'):
             body = data if isinstance(data, bytes) else json.dumps(data, ensure_ascii=False, allow_nan=False).encode()
             self.send_response(code)
+            origin=self.headers.get('Origin')
+            if origin in allowed_origins:
+                self.send_header('Access-Control-Allow-Origin',origin)
+                self.send_header('Vary','Origin')
             self.send_header('Content-Type', content_type)
             self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')
@@ -439,12 +460,27 @@ def serve(state, port):
             self.end_headers()
             self.wfile.write(body)
 
+        def do_OPTIONS(self):
+            if self.headers.get('Origin') not in allowed_origins:
+                return self.respond(403,{'error':'Origin is not allowed'})
+            self.send_response(204)
+            self.send_header('Access-Control-Allow-Origin',self.headers['Origin'])
+            self.send_header('Vary','Origin')
+            self.send_header('Access-Control-Allow-Methods','POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers','Authorization, Content-Type')
+            self.send_header('Content-Length','0')
+            self.end_headers()
+
         def do_GET(self):
+            if self.path == '/milg-widget.js':
+                return self.respond(200,widget,'text/javascript; charset=utf-8')
             if self.path == '/':
                 return self.respond(200, page, 'text/html; charset=utf-8')
             return self.respond(404, {'error': 'Not found'})
 
         def do_POST(self):
+            if self.headers.get('Origin') and self.headers['Origin'] not in allowed_origins and self.headers['Origin'] not in ('http://127.0.0.1:'+str(port),'http://localhost:'+str(port)):
+                return self.respond(403,{'error':'Origin is not allowed'})
             if not secrets.compare_digest(self.headers.get('Authorization',''), 'Bearer '+token):
                 return self.respond(401, {'error': 'Pilot token required'})
             try:
@@ -458,6 +494,8 @@ def serve(state, port):
                     result = engine.status()
                 elif self.path == '/api/cycle':
                     result = engine.submit(body)
+                elif self.path == '/api/review':
+                    result = engine.review(**body)
                 elif self.path == '/api/feedback':
                     result = engine.feedback(**body)
                 elif self.path == '/api/calibrate':
@@ -485,9 +523,10 @@ def main():
     parser.add_argument('--input')
     parser.add_argument('--out')
     parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--allow-origin',action='append',default=[])
     args = parser.parse_args()
     if args.command == 'serve':
-        return serve(args.state, args.port)
+        return serve(args.state, args.port, args.allow_origin)
     if args.command == 'rollback':
         state = Path(args.state)
         previous = json.loads((state/'pilot-previous.json').read_text(encoding='utf-8'))

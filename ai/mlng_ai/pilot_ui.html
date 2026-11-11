@@ -11,7 +11,7 @@
 <section class="card"><h2>분석 결과</h2><strong id="mode">입력 대기</strong><pre id="result">공정에 맞는 모델과 입력 규격을 확인합니다.</pre><small>공개 데이터 시험 모델입니다. 압입 정상 기준 이탈은 최종 품질 불합격을 뜻하지 않습니다.</small></section></div>
 <section class="card"><h2>담당자 확인</h2><div class="row"><div><label>작업 ID</label><input id="event"></div><div><label>담당자</label><input id="actor"></div><div><label>독립 검사 결과</label><select id="outcome"><option value="unknown">조사 중</option><option value="pass">합격</option><option value="fail">불합격</option></select></div></div><label>검사 근거 / 검사 성적서 번호</label><input id="evidence"><label>메모</label><input id="note"><button id="feedback">확인 결과 저장</button><small>확인 결과를 저장해도 모델은 자동으로 학습하지 않습니다.</small></section>
 </main>
-<script>
+<script src="/milg-widget.js"></script><milg-ai-widget id="liveWidget"></milg-ai-widget><script>
 const el=id=>document.getElementById(id);let payload={demo:true,process:'pressfit',cycle_id:'example-'+Date.now(),lot_id:'EXAMPLE-LOT',context:{machine_id:'EXAMPLE-MACHINE',part_number:'EXAMPLE-PART',program:'EXAMPLE-v1'},rows:[{units:{force:'N',displacement:'mm'},displacement:[0,1,2,3,4,5,6,7],force:[0,10,20,28,35,45,60,75]}]};el('payload').value=JSON.stringify(payload,null,2);
 async function call(path,body){let r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+el('token').value.trim()},body:JSON.stringify(body)});let d=await r.json();if(!r.ok)throw new Error(d.error||r.status);return d}
 function action(fn){return async()=>{try{el('notice').textContent='처리 중…';await fn();el('notice').textContent='완료';}catch(e){el('notice').textContent=e.message}}}
@@ -39,7 +39,7 @@ el('connect').onclick = action(async () => {
   }
 });
 el('file').onchange=action(async()=>{let text=await el('file').files[0].text();JSON.parse(text);el('payload').value=text});
-el('submit').onclick=action(async()=>{let d=await call('cycle',JSON.parse(el('payload').value));el('mode').textContent=d.mode;el('result').textContent=JSON.stringify(d,null,2);el('event').value=d.event_id||''});
+el('submit').onclick=action(async()=>{let payload=JSON.parse(el('payload').value);let d=await call('cycle',payload);el('liveWidget').configure({endpoint:location.origin,token:el('token').value,actor:el('actor').value||'pilot-reviewer'}).setResult(d,payload);el('mode').textContent=d.mode;el('result').textContent=JSON.stringify(d,null,2);el('event').value=d.event_id||''});
 el('feedback').onclick=action(async()=>{let d=await call('feedback',{event_id:el('event').value,outcome:el('outcome').value,actor:el('actor').value,evidence:el('evidence').value,note:el('note').value});el('result').textContent=JSON.stringify(d,null,2)});
 el('calibrate').onclick=action(async()=>{let d=await call('calibrate',{context:JSON.parse(el('payload').value).context});el('result').textContent=JSON.stringify(d,null,2)});
 </script></html>

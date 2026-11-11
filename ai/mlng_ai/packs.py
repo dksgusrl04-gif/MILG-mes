@@ -40,21 +40,21 @@ ST_KO = {'max': '최대', 'min': '최소', 'mean': '평균', 'std': '표준편�
 CH_KO = {'force': ('펀치 힘', 'N'), 'cur': ('용접 전류', 'A'), 'volt': ('용접 전압', 'V'), 'pow': ('용접 전력', 'W'), 'inj_prs': ('사출 압력', 'bar'), 'cav_prs': ('금형 내압', 'bar'),
          'inj_vel': ('사출 속도', 'mm/s'), 'rsw_force': ('가압력', 'N'), 'rsw_cur': ('용접 전류', 'A')}
 
-# 학습에 쓰지 않은 것 — 이유
+# 초기 불량 분류에서 제외한 자료. 회귀/별도 실험 재검토는 reports/packs-recheck.md 참고.
 SKIPPED = [
     ('사출', 'Production Data (d-optimal DoE)', '정상 303건뿐 (NOK 0)', '보류'),
     ('사출', 'Foxconn 사출 치수', '사용 조건(라이선스) 미확인', '보류'),
     ('사출', 'Uni Kassel 사출 + 체결 연계', '조건 변경 실험 — 불량 라벨 아님 (설정값이 곧 정답)', '보류'),
-    ('사출', 'SKZ 점도 센서', '68건 · 불량 라벨 없음', '부적합'),
+    ('사출', 'SKZ 점도 센서', '68건 · 제품 치수/합불 정답 없음 · 기계 에너지 예측 등 별도 목적', '품질 학습 보류'),
     ('사출', 'AD-STGN (CMMS)', '칼럼 이름 익명 · 정답은 시험 111건뿐', '부적합'),
     ('사출', 'RWTH 재생 PP · IMM · Preform · Mendeley DataModel', '제어 실험 곡선 · 시뮬레이션 27건 · 머리글만 — 불량 라벨 없음', '부적합'),
     ('프레스', 'RDDAC (DaRUS 2026)', '분류값이 공정 조건 18종 (불량 아님)', '부적합'),
     ('프레스', 'Deep drawing 힘 곡선 (합성 요건)', '조건당 기록 1개 — 통째로 빼는 검증 불가', '보류'),
-    ('프레스', 'Fine-blanking DiCo · Stuttgart 시뮬레이션 · Air bending · Tube bending', '회귀 · 시뮬레이션 · 스프링백 — 불량 라벨 없음', '부적합'),
+    ('프레스', 'Fine-blanking DiCo · Stuttgart 시뮬레이션 · Air bending · Tube bending', 'TubeBEND 형상 회귀 추가 학습 완료 · 그 외는 재검토 보고서 참고', '회귀 후보 평가 완료'),
     ('용접', 'RSW 차체 (GitHub)', 'CC BY-NC 4.0 — 상용 학습 불가', '제외'),
-    ('용접', '레이저 배터리 탭 (포토다이오드)', '약 150건 · 원신호 rar', '보류'),
+    ('용접', '레이저 배터리 탭 (포토다이오드)', '통계 특징 Excel/검사 라벨 확인 · 중복 제거 후 138건 학습 · 실험 제외 AUC 미달', '학습 완료 · 적용 보류'),
     ('용접', '레이저 맞대기 (LWIR)', '열화상 프레임 라벨 — 영상 모델 필요', '보류'),
-    ('용접', 'GMAW 비드 형상 2종 · CMT 프로파일 · RSW benchmark · Refill FSSW', '형상 회귀 · 코드만 · 7z (미확인)', '부적합'),
+    ('용접', 'GMAW 비드 형상 2종 · CMT 프로파일 · RSW benchmark · Refill FSSW', 'GMAW 2종/CMT 형상 후보 학습 완료 · FSSW는 검사 정답표 매핑 미확정', '일부 학습 완료 · 적용 보류'),
 ]
 
 
@@ -356,7 +356,7 @@ def evaluate(t: Table, G: np.ndarray, info: dict) -> dict:
     if rel:                                              # 공구(펀치)를 통째로 뺄 때는 절대 수준이 공구마다 달라 «교체 후 변화» 만 쓴다 (MCT 설비 이전과 같은 규칙)
         L = L[[c for c in L if c.startswith('rel_')]]
     Xml = t.df.drop(columns=[c for c in t.df if c in IDS or c == ycol]).apply(pd.to_numeric, errors='coerce')
-    Xml = pd.concat([Xml, L[[c for c in L if c.startswith('rel_')]]], axis=1).fillna(Xml.median()).fillna(0.0)
+    Xml = pd.concat([Xml, L[[c for c in L if c.startswith('rel_')]]], axis=1).replace([np.inf,-np.inf],np.nan)
     y_all = t.df[ycol].to_numpy(float)
     pool, ys, ops, folds = {k: [] for k in ('rule', 'engine', 'plus', 'boost')}, [], {k: [] for k in ('engine', 'plus', 'boost')}, []
     for g in sorted(pd.unique(G)):
@@ -369,8 +369,10 @@ def evaluate(t: Table, G: np.ndarray, info: dict) -> dict:
         Xa2, _, Xb2, _, _ = _fold_data(t, g, 'rel', G) if rel else (Xa, ya, Xb, yb, rule)
         a, b, _, _ = engine_with_local(t.key, Xa2, ya, Xb2, L[~te], L[te], info['two'])
         S['plus'] = (a, b)
-        gb = HistGradientBoostingClassifier(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, random_state=0).fit(Xml[~te], y_all[~te].astype(int))
-        S['boost'] = (gb.predict_proba(Xml[~te])[:, 1], gb.predict_proba(Xml[te])[:, 1])
+        from .strict_evaluation import TrainTransform
+        prep = TrainTransform().fit(Xml[~te])
+        gb = HistGradientBoostingClassifier(max_iter=200, learning_rate=0.05, max_leaf_nodes=15, random_state=0).fit(prep.transform(Xml[~te]), y_all[~te].astype(int))
+        S['boost'] = (gb.predict_proba(prep.transform(Xml[~te]))[:, 1], gb.predict_proba(prep.transform(Xml[te]))[:, 1])
         for k, (s_tr, s_te) in S.items():
             s_te = np.asarray(s_te, float)
             pool[k] += list(s_te)
@@ -389,9 +391,10 @@ def evaluate(t: Table, G: np.ndarray, info: dict) -> dict:
             o = np.array(ops[k]).sum(0)
             m.update(recall=float(o[0] / o[1]) if o[1] else None, false_alarm=float(o[2] / o[3]) if o[3] else None)
         res['models'][k] = m
-    ok = bool(res['models']['plus']['auc'] >= GATE)
-    res['apply'] = ok and not info.get('hold')
-    res['reason'] = '' if res['apply'] else (info.get('hold') or f'기준 미달 (AUC {GATE:g})')
+    ok = bool(res['models']['plus']['auc'] >= GATE and (res['models']['plus'].get('false_alarm') or 0) <= .10 and (res['models']['plus'].get('recall') or 0) >= .30)
+    res['apply'] = False  # Legacy benchmark never installs: use train_widget_engine three-way evaluation.
+    res['eligible_for_strict_validation'] = ok and not info.get('hold')
+    res['reason'] = '' if res['apply'] else (info.get('hold') or '별도 검증 임계값 · 추론 등록 필요')
     return res
 
 
@@ -437,7 +440,7 @@ def _save(t: Table, path: Path, meta: dict, two: bool, rel: bool):
     sc = LocalScaler(two).fit(L)
     M = fit_engine(t.key, np.column_stack([X, sc.transform(L)]), np.asarray(e.y, float), list(SLOTS) + sc.names)
     d = {'kind': 'milg_engine_local', 'process': t.key, 'model': M.to_dict(), 'fit': FIT, 'variant': 'rel' if rel else 'sensor',
-         'local': {'cols': sc.cols, 'mu': sc.mu.tolist(), 'sd': sc.sd.tolist(), 'two_sided': two, 'rel_n': 10}, **meta}
+         'local': {'cols': sc.cols, 'mu': sc.mu.tolist(), 'sd': sc.sd.tolist(), 'imputation':sc.median.tolist(), 'two_sided': two, 'rel_n': 10}, **meta}
     txt = json.dumps(d, ensure_ascii=False)
     d = json.loads(txt, parse_float=lambda x: float(f'{float(x):.6g}'))     # 유효 숫자 6자리 — 파일 크기를 줄인다
     path.write_text(json.dumps(d, ensure_ascii=False), encoding='utf-8')

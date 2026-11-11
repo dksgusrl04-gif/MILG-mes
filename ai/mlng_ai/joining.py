@@ -118,7 +118,7 @@ class _SafeUnpickler(pickle.Unpickler):
     OK = {'slice', 'list', 'dict', 'tuple', 'set', 'frozenset', 'int', 'float', 'str', 'bytes', 'complex', 'bool', 'range', 'object'}
 
     def find_class(self, module, name):
-        if module.split('.')[0] in ('pandas', 'numpy') or (module == 'builtins' and name in self.OK):
+        if (module=='pyarrow.lib' and name in ('_restore_array','type_for_alias','py_buffer')) or module.split('.')[0] in ('pandas', 'numpy') or (module == 'builtins' and name in self.OK):
             return super().find_class(module, name)
         raise pickle.UnpicklingError(f'허용하지 않는 객체: {module}.{name}')
 

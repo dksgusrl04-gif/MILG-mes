@@ -39,19 +39,11 @@ def _ml_frame(t, rel: bool = False) -> pd.DataFrame:
     """일반 ML 입력 — 센서 칼럼 그대로 (식별자 · 정답 · 사용량 제외). rel=True 면 공구별 처음 N회 대비 log 비율을 덧붙인다"""
     df = t.df
     X = df.drop(columns=[c for c in ['tool_id', 'tool_ng', *USAGE_COLS] if c in df])
-    for c in X.columns:
-        if not pd.api.types.is_numeric_dtype(X[c]):
-            X[c] = X[c].astype('category').cat.codes
-    X = X.astype(float)
+    X = X.apply(pd.to_numeric,errors='coerce').astype(float)
     if rel:
-        R = {}
-        g = df.tool_id.to_numpy()
-        for c in X.columns:
-            v = X[c].abs()
-            ref = v.groupby(g).transform(lambda s: s.iloc[:REL_N].mean())
-            R[f'rel_{c}'] = np.log((v + 1e-9) / (ref + 1e-9))
-        X = pd.concat([X, pd.DataFrame(R, index=X.index)], axis=1)
-    return X.fillna(X.median()).fillna(0.0)
+        from .booster import rel_features
+        X = pd.concat([X,rel_features(X,df.tool_id.to_numpy(),REL_N)],axis=1)
+    return X.replace([np.inf,-np.inf],np.nan)
 
 
 def _ml_models():
@@ -141,8 +133,11 @@ def compare(t, groups: np.ndarray | None = None, minutes_col: str | None = None)
         for k, f in mk.items():
             X = Xrel if k.endswith('_rel') else Xml
             mtr = tr & lab
-            clf = f().fit(X[mtr], y_all[mtr].astype(int))
-            S[k] = (clf.predict_proba(X[mtr])[:, 1], clf.predict_proba(X[te])[:, 1], y_all[mtr])
+            from .strict_evaluation import TrainTransform
+            prep = TrainTransform().fit(X[mtr])
+            a,b = prep.transform(X[mtr]),prep.transform(X[te])
+            clf = f().fit(a, y_all[mtr].astype(int))
+            S[k] = (clf.predict_proba(a)[:, 1], clf.predict_proba(b)[:, 1], y_all[mtr])
         keep = ~np.isnan(yte)
         for k, (s_tr, s_te, y_tr) in S.items():
             s_te = np.asarray(s_te, float)

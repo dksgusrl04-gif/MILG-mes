@@ -18,7 +18,11 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl=None
+    import msvcrt
 import hashlib
 import json
 import os
@@ -121,10 +125,20 @@ def record(tenant: str, endpoint: str, rows: int, status: int = 200, ip: str = '
     p.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps({'ts': dt.datetime.now().isoformat(timespec='seconds'), 'tenant': tenant, 'endpoint': endpoint, 'rows': int(rows), 'status': status,
                        'ip': ip, 'key': key_hint}, ensure_ascii=False)
-    with open(p, 'a', encoding='utf-8') as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        f.write(line + '\n')
-        fcntl.flock(f, fcntl.LOCK_UN)
+    with open(p.with_suffix('.lock'),'a+b') as lock:
+        if fcntl is not None:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+        else:
+            lock.seek(0,2)
+            if not lock.tell():lock.write(b'0');lock.flush()
+            lock.seek(0);msvcrt.locking(lock.fileno(),msvcrt.LK_LOCK,1)
+        try:
+            with open(p,'a',encoding='utf-8') as f:
+                f.write(line+'\n')
+        finally:
+            if fcntl is not None:fcntl.flock(lock,fcntl.LOCK_UN)
+            else:
+                lock.seek(0);msvcrt.locking(lock.fileno(),msvcrt.LK_UNLCK,1)
 
 
 def usage(tenant: str | None = None, month: str | None = None) -> dict:

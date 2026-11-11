@@ -1,0 +1,5 @@
+{
+  "active": false,
+  "reason": "Legacy model is not registered. Strict grouped candidate fails FPR gate.",
+  "report": "ai\\reports\\widget-engine\\20261111-084233-407047\\report.json"
+}

@@ -25,14 +25,22 @@ class LocalScaler:
 
     def fit(self, X: pd.DataFrame):
         A = X.to_numpy(float)
-        sd = np.nanstd(A, 0)
-        keep = sd > 1e-9
-        self.cols = [c for c, k in zip(X.columns, keep) if k]
-        self.mu, self.sd = np.nanmean(A, 0)[keep], sd[keep]
+        valid = np.isfinite(A)
+        available = valid.mean(axis=0) > .5
+        A = np.where(valid, A, np.nan)
+        median = np.array([np.median(A[valid[:,i],i]) if valid[:,i].any() else 0. for i in range(A.shape[1])])
+        filled = np.where(valid, A, median)
+        sd = filled.std(axis=0)
+        keep = available & (sd > 1e-9)
+        self.cols = [c for c,k in zip(X.columns,keep) if k]
+        self.median = median[keep]
+        self.mu, self.sd = filled.mean(axis=0)[keep], sd[keep]
         return self
 
     def transform(self, X: pd.DataFrame) -> np.ndarray:
-        Z = np.clip((X[self.cols].to_numpy(float) - self.mu) / self.sd, -self.clip, self.clip)
+        A = X.reindex(columns=self.cols).to_numpy(float)
+        A = np.where(np.isfinite(A), A, self.median)
+        Z = np.clip((A - self.mu) / self.sd, -self.clip, self.clip)
         Z = np.nan_to_num(Z)
         return np.column_stack([Z, np.abs(Z), Z * Z / self.clip]) if self.two_sided else Z
 
@@ -71,12 +79,10 @@ DROP = {'tool_id', 'curve_id', 'tool_ng', 'assembly_ng', 'join_ng', 'use_count',
 def local_frame(df: pd.DataFrame, entity: str | None = 'tool_id', rel_n: int = 10) -> pd.DataFrame:
     """공정 전용 입력 후보 — 숫자 칼럼 그대로 (식별자 · 정답 · 사용량 제외) + 공구가 있으면 처음 rel_n 회 대비 log 변화"""
     X = df.drop(columns=[c for c in df.columns if c in DROP]).apply(pd.to_numeric, errors='coerce')
-    X = X.loc[:, X.notna().mean() > 0.5].astype(float)
-    X = X.fillna(X.median()).fillna(0.0)
+    X = X.astype(float).replace([np.inf,-np.inf],np.nan)
     if entity and entity in df:
-        g = df[entity].to_numpy()
-        R = {f'rel_{c}': np.log((X[c].abs() + 1e-9) / (X[c].abs().groupby(g).transform(lambda s: s.iloc[:rel_n].mean()) + 1e-9)) for c in X.columns}
-        X = pd.concat([X, pd.DataFrame(R, index=X.index)], axis=1)
+        from .booster import rel_features
+        X = pd.concat([X, rel_features(X,df[entity].to_numpy(),rel_n)],axis=1)
     return X
 
 
@@ -111,6 +117,6 @@ def train_and_save(t, path, info: dict | None = None, two_sided: bool = False):
     sc = LocalScaler(two_sided).fit(L)
     M = fit_engine(t.key, np.column_stack([X, sc.transform(L)]), np.asarray(e.y, float), list(SLOTS) + sc.names)
     d = {'kind': 'milg_engine_local', 'process': t.key, 'model': M.to_dict(), 'fit': FIT,
-         'local': {'cols': sc.cols, 'mu': sc.mu.tolist(), 'sd': sc.sd.tolist(), 'two_sided': two_sided, 'rel_n': 10}, **(info or {})}
+         'local': {'cols': sc.cols, 'mu': sc.mu.tolist(), 'sd': sc.sd.tolist(), 'imputation':sc.median.tolist(), 'two_sided': two_sided, 'rel_n': 10}, **(info or {})}
     Path(path).write_text(json.dumps(d, ensure_ascii=False), encoding='utf-8')
     return M, sc

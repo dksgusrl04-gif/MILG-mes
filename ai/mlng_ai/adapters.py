@@ -8,9 +8,9 @@ import pandas as pd
 
 RECIPES={'screw_stage_torque_angle_v1','screw_stage_torque_angle_v2','aursad_post_operation_progress_shapes_v1',
          'clamping_torque_v1','mct_sensor_columns_v1','causalman_scalar_v1',
-         'injection_kamp_summary_v1','heat_kamp_summary_v1','scatim_waveform_summary_v1','spot_weld_aisi1010_v1','press_pump_window_v1','heat_tempering_hrc_v1','press_p2s_force_v1','spot_weld_rsw_summary_v1'}
+         'injection_kamp_summary_v1','heat_kamp_summary_v1','scatim_waveform_summary_v1','spot_weld_aisi1010_v1','press_pump_window_v1','heat_tempering_hrc_v1','press_p2s_force_v1','spot_weld_rsw_summary_v1','ddacs_parameters_v1','extra_numeric_v1','widget_numeric_v1'}
 
-REGRESSION_TARGETS = {'preload_kN','batch_defect_rate','scatim_part_weight','spot_weld_nugget_diameter_mm','press_pump_anomaly_score','final_hardness_hrc'}
+REGRESSION_TARGETS = {'preload_kN','batch_defect_rate','scatim_part_weight','spot_weld_nugget_diameter_mm','press_pump_anomaly_score','final_hardness_hrc','ddacs_sim_min_thickness_mm','gmaw_penetration_mm','gmaw_height_mm','gmaw_width_mm','tube_collapse_mm'}
 
 def recipe_of(artifact):
     recipe=artifact.get('feature_recipe')
@@ -63,6 +63,9 @@ def input_features(recipe,df,columns):
     elif recipe=='press_p2s_force_v1':
         from .press_quality import force_features
         work = pd.DataFrame([force_features(row) for row in df.to_dict('records')])
+    elif recipe=='ddacs_parameters_v1':
+        from .ddacs import parameter_features
+        work = pd.DataFrame([parameter_features(row) for row in df.to_dict('records')])
     elif recipe=='press_pump_window_v1':
         from .press_pump import window_features
         work = pd.DataFrame([window_features(row) for row in df.to_dict('records')])
@@ -115,6 +118,8 @@ def register_external(router,process,source,kind,approved_by):
         import joblib
         artifact=joblib.load(source)
         recipe=recipe_of(artifact);prep=artifact['preprocessing'];cols=prep['columns']
+        if recipe=='widget_numeric_v1' and artifact.get('evaluation_gate') is not True:
+            raise ValueError('Widget candidate did not pass independent grouped evaluation')
         if len(cols)!=artifact['model'].n_features_in_:raise ValueError('Model/preprocessing size mismatch')
         for k in ('imputation','mean','std'):
             if len(prep[k])!=len(cols) or not np.isfinite(prep[k]).all():raise ValueError('Invalid preprocessing')
@@ -122,7 +127,7 @@ def register_external(router,process,source,kind,approved_by):
         if not hasattr(artifact['model'],'predict_proba') and artifact.get('target') not in REGRESSION_TARGETS:raise ValueError('Unsupported regressor')
         if hasattr(artifact['model'],'predict_proba') and not np.isfinite(artifact.get('threshold',np.nan)):
             raise ValueError('Finite validation threshold required')
-        contract={'recipe':recipe,'columns':cols};synthetic=False;filename='model.joblib'
+        contract={'recipe':recipe,'columns':cols};synthetic=bool(artifact.get('synthetic',False));filename='model.joblib'
     else:
         artifact=json.loads(source.read_text(encoding='utf-8'))
         if artifact.get('regression_gate',{}).get('passed') is not True:raise ValueError('Joint regression gate failed')
@@ -164,6 +169,16 @@ def predict_external(router,process,route,df):
             for column, (low, high) in artifact['bounds'].items():
                 if not features[column].between(low, high).all():
                     raise ValueError('Outside published tempering input range: '+column)
+        if recipe == 'ddacs_parameters_v1':
+            for column, (low, high) in artifact['bounds'].items():
+                if not features[column].between(low-1e-9, high+1e-9).all():
+                    raise ValueError('Outside supported DDACS parameter range: '+column)
+            for row in df.to_dict('records'):
+                if not any(row.get('geometry') == geometry['geometry'] and
+                           all(np.isclose(row[key], geometry[key], rtol=0, atol=1e-9)
+                               for key in ('curvature_radius','bottom_radius','wall_angle'))
+                           for geometry in artifact['geometries']):
+                    raise ValueError('Unsupported DDACS geometry configuration')
         model=artifact['model'];is_regression=artifact.get('target') in REGRESSION_TARGETS
         if recipe == 'press_pump_window_v1':
             scores = -model.score_samples(X)

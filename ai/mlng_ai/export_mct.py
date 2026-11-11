@@ -105,22 +105,33 @@ def run(vb: float = 0.35, limit: float = 0.5, write: bool = True) -> dict:
     G = raw.tool_id.to_numpy()
     lab = raw.tool_ng.notna().to_numpy()
     S = np.full(len(raw), np.nan)
-    TH, TOP = {}, {}
+    TH, TOP, FOLDS = {}, {}, {}
+    from .train_widget_engine import calibration_partition
     for g in sorted(pd.unique(G)):
-        tr = t.df[lab & (G != g)]
-        te = t.df[G == g].copy()
-        te['tool_ng'] = te.tool_ng.fillna(0.0)                      # 평가 공구의 정답은 학습에 쓰이지 않는다 (자리 채움)
-        df = pd.concat([tr, te]).reset_index(drop=True)
-        Xa, ya, Xb, _, _ = _fold_data(Table(KEY, t.process, df, t.meta, {}, '', {}, 'row', t.source, entity='tool_id'), g, 'sensor')
-        L = local_frame(df, 'tool_id')
-        m = (df.tool_id == g).to_numpy()
-        sc = LocalScaler().fit(L[~m])
-        A, B = np.column_stack([Xa, sc.transform(L[~m])]), np.column_stack([Xb, sc.transform(L[m])])
-        ya = np.asarray(ya, float)
-        M = fit_engine(KEY, A, ya, list(SLOTS) + sc.names)
-        S[G == g] = M.predict(KEY, B, np.ones(len(B)))[0]
-        TH[g] = float(np.quantile(M.predict(KEY, A, np.ones(len(A)))[0][ya == 0], 0.95))
-        TOP[g] = [[{**_name(r['slot'], sig), 'x': _r(r['x'], 1), 'c': _r(r['contrib'], 2)} for r in M.explain(KEY, B[i]) if r['contrib'] > 0.05][:3] for i in range(len(B))]
+        train,validation,test=calibration_partition(G,np.nan_to_num(raw.tool_ng.to_numpy()),g)
+        train &= lab
+        FOLDS[g]={"training_tools":sorted(set(G[train])),"calibration_tools":sorted(set(G[validation]))}
+        evaluation=validation|test
+        tr=t.df[train]
+        te=t.df[evaluation].copy()
+        # Prediction input never includes validation/test outcomes in schema fitting.
+        te['tool_ng']=0.
+        df=pd.concat([tr,te]).reset_index(drop=True)
+        split=np.array(['train']*len(tr)+['evaluation']*len(te))
+        Xa,ya,Xb,_,_=_fold_data(Table(KEY,t.process,df,t.meta,{},'',{},'row',t.source,entity='tool_id'),'evaluation','sensor',split)
+        L=local_frame(df,'tool_id');m=split=='evaluation'
+        sc=LocalScaler().fit(L[~m])
+        A,B=np.column_stack([Xa,sc.transform(L[~m])]),np.column_stack([Xb,sc.transform(L[m])])
+        M=fit_engine(KEY,A,np.asarray(ya,float),list(SLOTS)+sc.names)
+        scores=M.predict(KEY,B,np.ones(len(B)))[0]
+        val_in_eval=validation[evaluation]&lab[evaluation]
+        normals=val_in_eval&(raw.tool_ng.to_numpy()[evaluation]==0)
+        if not normals.any():
+            raise ValueError('No independent normal calibration cycles for '+g)
+        TH[g]=float(np.quantile(scores[normals],.95,method='higher'))
+        selected=test[evaluation]
+        S[test]=scores[selected]
+        TOP[g]=[[{**_name(r['slot'],sig),'x':_r(r['x'],1),'c':_r(r['contrib'],2)} for r in M.explain(KEY,B[i]) if r['contrib']>.05][:3] for i in np.flatnonzero(selected)]
     p = lambda s: 1 - np.exp(-np.asarray(s, float))               # 기대 사건 수 → 확률
     y = raw.tool_ng.to_numpy()
     ok = ~np.isnan(y)
@@ -141,15 +152,18 @@ def run(vb: float = 0.35, limit: float = 0.5, write: bool = True) -> dict:
                 leads.append(lead)
         if a1 is not None and (warn is None or a1 < warn) and float(np.nanmax(vbn)) < vb:
             early += 1                                              # 주의 기준에 끝내 닿지 않았는데 알림
-        tools[g] = {'thr': _r(d.thr.iloc[0]), 'alert_run': a1, 'warn_run': warn, 'limit_run': lim, 'lead': lead,
+        tools[g] = {**FOLDS[g], 'thr': _r(d.thr.iloc[0]), 'alert_run': a1, 'warn_run': warn, 'limit_run': lim, 'lead': lead,
                     'runs': [{'run': int(r.run), 'p': _r(r.p), 'al': bool(r.al), 'top': TOP[g][i]} for i, r in enumerate(d.itertuples())]}
     norm = ok & (y == 0)
     out = {'built': dt.datetime.now().strftime('%Y-%m-%d %H:%M'), 'engine': 'MILG 엔진 + 공정 전용 입력', 'source': mach.get('source') or 'NASA Ames Milling Data Set',
-           'vb': vb, 'limit': limit, 'label': f'VB ≥ {vb:g} mm', 'method': '공구를 통째로 빼고 학습 → 뺀 공구로 평가', 'usage_excluded': True, 'alert_rule': '2회 연속 기준 초과', 'fit': FIT,
+           'vb': vb, 'limit': limit, 'label': f'VB ≥ {vb:g} mm', 'method': '공구를 통째로 빼고 학습·검증·시험 분리 · 알림 기준은 검증 공구에서 결정', 'usage_excluded': True, 'alert_rule': '2회 연속 검증 기준 초과', 'fit': FIT, 'threshold_source':'held-out calibration tools', 'causal_features':True,
            'n_tools': int(len(tools)), 'n_runs': int(len(raw)), 'n_labelled': int(ok.sum()), 'n_events': int(np.nansum(y)), 'auc': _r(auc(S[ok], y[ok])),
            'ops': {'over': over, 'caught': caught, 'lead_median': _r(np.median(leads), 1) if leads else None, 'lead_min': min(leads) if leads else None, 'lead_max': max(leads) if leads else None,
                    'false_alarm': _r(raw.al.to_numpy()[norm].mean()), 'early_tools': early},
            'tools': tools, 'bench': _bench()}
+    out['evaluation_version']='causal-grouped-v2'
+    for row in out['bench']:
+        row['verification_status']='legacy_needs_strict_revalidation'
     if write:
         f = WEB / 'ai_model.json'
         art = json.loads(f.read_text(encoding='utf-8'))

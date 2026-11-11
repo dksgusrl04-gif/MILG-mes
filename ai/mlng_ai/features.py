@@ -305,12 +305,13 @@ def outcome_vector(s: pd.Series, cs: ColumnSense) -> np.ndarray:
     return ev
 
 
-def encode(t: Table, overrides: dict | None = None, llm: bool = False) -> Encoded:
+def encode(t: Table, overrides: dict | None = None, llm: bool = False, training_rows: int | None = None) -> Encoded:
     df = t.df
     if t.profile:
         raw_columns = ['tightening steps', t.profile['signal'], t.profile['axis'], 'confirmed_normal']
         df = df.drop(columns=raw_columns, errors='ignore')
-    S = sense_table(df, t.meta, overrides=overrides, llm=llm, process=t.process)
+    fit_df = df if training_rows is None else df.iloc[:training_rows]
+    S = sense_table(fit_df, t.meta, overrides=overrides, llm=llm, process=t.process)
     oc = [c for c, s in S.items() if s.role == 'outcome']
     if not oc:
         raise ValueError(f'{t.key}: 결과(불량) 칼럼을 찾지 못했습니다 — overrides 로 지정하세요')
@@ -319,7 +320,9 @@ def encode(t: Table, overrides: dict | None = None, llm: bool = False) -> Encode
     n = pd.to_numeric(df[ex[0]], errors='coerce').fillna(1).clip(lower=1).to_numpy(float) if ex else np.ones(len(df))
     if not ex and y.max() > 1:
         n = np.maximum(n, y)
-    leak = leakage_guard(df, S, (y > 0).astype(float) if y.max() <= 1 else (y / n > np.median(y / n)).astype(float))
+    fit_y = y if training_rows is None else y[:training_rows]
+    fit_n = n if training_rows is None else n[:training_rows]
+    leak = leakage_guard(fit_df, S, (fit_y > 0).astype(float) if fit_y.max() <= 1 else (fit_y / fit_n > np.median(fit_y / fit_n)).astype(float))
 
     params = [c for c, s in S.items() if s.role == 'param']
     Z = {c: expanding_z(pd.to_numeric(df[c], errors='coerce').to_numpy(float)) for c in params if S[c].stat != 'event'}

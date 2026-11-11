@@ -115,10 +115,10 @@ VNAME = {'sensor': '센서만 (모든 슬롯)', 'rel': '센서만 · 교체 후 
 USAGE_SLOTS = ['acc:count', 'acc:exposure', 'acc:native']     # 사용 횟수 · 시간 자체 — 센서에서 나온 누적 이탈(acc:dose · drift)은 센서 정보라 남긴다
 
 
-def _encode(t: Table, variant: str):
+def _encode(t: Table, variant: str, training_rows: int | None = None):
     if variant in ('sensor', 'rel'):
         t = Table(t.key, t.process, t.df.drop(columns=[c for c in USAGE_COLS if c in t.df]), t.meta, t.spec, t.lot_col, t.parents, t.unit_kind, t.source, t.series, t.entity)
-    e = encode(t)
+    e = encode(t, training_rows=training_rows)
     add_upstream({t.key: e})
     Xs = standardize(e.X)[SLOTS]
     if variant in ('sensor', 'rel'):
@@ -144,7 +144,7 @@ def _fold_data(t: Table, test_tool: str, variant: str, groups: np.ndarray | None
     tr = t.df[g != test_tool]
     te = t.df[g == test_tool]
     f = Table(t.key, t.process, pd.concat([tr, te]).reset_index(drop=True), t.meta, {}, '', {}, 'row', t.source, entity=t.entity)
-    e, X = _encode(f, variant)
+    e, X = _encode(f, variant, training_rows=len(tr))
     k = len(tr)
     return X[:k], e.y[:k], X[k:], e.y[k:], e.X['all_max'].to_numpy()[k:]
 

@@ -23,8 +23,9 @@ def rel_features(X: pd.DataFrame, entity: np.ndarray, n: int = REL_N) -> pd.Data
     R = {}
     for c in X.columns:
         v = X[c].abs()
-        ref = v.groupby(entity).transform(lambda s: s.iloc[:n].mean())
-        R[f'rel_{c}'] = np.log((v + 1e-9) / (ref + 1e-9))
+        # For cycle i use only earlier observations. Freeze after n observations.
+        ref = v.groupby(entity, sort=False).transform(lambda s: s.shift().expanding(min_periods=1).mean().where(np.arange(len(s)) <= n).ffill())
+        R[f'rel_{c}'] = np.log((v + 1e-9) / (ref + 1e-9)).where(ref.notna(),0.)
     return pd.DataFrame(R, index=X.index)
 
 

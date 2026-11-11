@@ -24,3 +24,7 @@ reports/failure-analysis/
 reports/process-evaluation/
 reports/strict-validation/
 test_result.json
+reports/ddacs/
+reports/packs-recheck/
+
+reports/widget-engine/
