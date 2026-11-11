@@ -137,8 +137,9 @@ def run(fast: bool = False, write: bool = True) -> dict:
         STATE.parent.mkdir(parents=True, exist_ok=True); M.save(STATE)
         if WEB.exists():                                           # MCT 공구 위험도(export-mct)는 따로 만든다 — 다시 학습해도 남긴다
             old = json.loads(WEB.read_text(encoding='utf-8'))
-            if 'mct' in old:
-                art['mct'] = old['mct']
+            for k in ('mct', 'packs'):                           # 따로 만드는 결과(export-mct · packs)는 다시 학습해도 남긴다
+                if k in old:
+                    art[k] = old[k]
         WEB.write_text(json.dumps(art, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
         REPORT.parent.mkdir(parents=True, exist_ok=True); REPORT.write_text(report_md(art), encoding='utf-8')
     return art

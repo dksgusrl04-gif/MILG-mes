@@ -88,6 +88,12 @@
         <thead><tr><th>데이터</th><th>규모</th><th>검증</th><th class="n">단순 규칙</th><th class="n">MILG 엔진</th><th class="n">범용 부스팅</th><th>엔진 입력</th></tr></thead><tbody>
         ${m.bench.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.size)}</td><td>${esc(r.unit)}</td><td class="n">${cell(r.rule)}</td><td class="n">${cell(r.engine, win(r))}</td><td class="n">${cell(r.boost, !win(r))}</td><td>${esc(r.input)}</td></tr>`).join('')}</tbody></table></div>
         <p class="note">굵게 = 더 높은 쪽. 범용 부스팅은 비교 기준 — 엔진 계산에는 들어가지 않습니다. 다른 설비로 옮기면 엔진 0.88 · 부스팅 0.97.</p></div>
+      ${A.packs ? `<div class="card" style="margin-top:16px"><h2>사출 · 프레스 · 용접 학습 팩 검증 <span class="h2sub">구분력(AUC) · 적용 기준 ${f(A.packs.gate, 2)} 이상 · ${esc(A.packs.built)}</span></h2>
+        <div class="tbx"><table class="tb xtab"><colgroup><col class="c-n"><col><col class="c-rk"><col class="c-gate"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col></colgroup>
+        <thead><tr><th>공정</th><th>데이터</th><th>규모</th><th>검증</th><th class="n">단순 규칙</th><th class="n">MILG 엔진</th><th class="n">범용 부스팅</th><th>사용 조건</th><th>판정</th></tr></thead><tbody>
+        ${A.packs.rows.map(r => `<tr><td>${esc(r.proc)}</td><td>${esc(r.short || r.name)}</td><td>${esc(r.size)}</td><td>${esc(r.unit)}</td><td class="n">${cell(r.rule)}</td><td class="n">${cell(r.engine, r.engine >= r.boost)}</td><td class="n">${cell(r.boost, r.boost > r.engine)}</td>
+          <td>${esc(r.license)}</td><td>${r.apply ? '<span class="tag j-ok">적용</span>' : `<span class="tag j-none">보류</span> <span class="muted">${esc(r.reason || '')}</span>`}</td></tr>`).join('')}</tbody></table></div>
+        <p class="note">묶음(실험 · 조건 · 펀치 · 시간 구간)을 통째로 빼고 평가. 적용 = 기본 모델 저장 · 위 기준선 비교 표에 반영. 학습에 쓰지 않은 데이터 ${A.packs.skipped.length}묶음 (불량 라벨 없음 · 조건 분류 · 사용 조건 미확인) — ai/reports/packs.md.</p></div>` : ''}
       <div class="grid g21" style="margin-top:16px">
         <div class="card"><h2>MES 가공 기록 적용 <span class="h2sub">${esc(m.engine)} · 정답 ${esc(m.label)}</span></h2>
           <div class="tbx"><table class="tb xtab"><colgroup><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col class="c-n"><col></colgroup>
@@ -239,7 +245,7 @@
     if (err) return `<div class="card"><div class="empty">${esc(err)}</div></div>`;
     if (!A) return '<div class="card"><div class="empty">공정 통합 AI 결과를 불러오는 중…</div></div>';
     const body = { schema: vSchema, learn: vLearn, mct: vMct, cold: vCold, raw: vRaw, trace: vTrace, dx: vDiag }[st.tab] || vSchema;
-    return `${kpis()}<div class="spc-sub" style="margin-top:12px">${M.seg('xa', 'tab|' + st.tab, [['tab|schema', '칼럼 해석'], ['tab|learn', '누적 학습'], ['tab|mct', 'MCT 공구 모델'], ['tab|cold', '처음 보는 공정'], ['tab|raw', '적산 · 비정형'], ['tab|trace', '원인 추적'], ['tab|dx', '데이터 진단']])}
+    return `${kpis()}<div class="spc-sub" style="margin-top:12px">${M.seg('xa', 'tab|' + st.tab, [['tab|schema', '칼럼 해석'], ['tab|learn', '누적 학습'], ['tab|mct', '공정별 모델'], ['tab|cold', '처음 보는 공정'], ['tab|raw', '적산 · 비정형'], ['tab|trace', '원인 추적'], ['tab|dx', '데이터 진단']])}
       <span class="muted" style="font-size:12px;margin-left:auto">${esc(A.version)} · ${esc(A.built)}</span></div>${body()}`;
   };
   const wrap = fn => () => { load(); if (err) return `<div class="card"><div class="empty">${esc(err)}</div></div>`;

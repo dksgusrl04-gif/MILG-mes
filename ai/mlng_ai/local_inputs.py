@@ -64,7 +64,8 @@ def engine_with_local(key: str, X_slots_tr, y_tr, X_slots_te, local_tr: pd.DataF
     return M.predict(key, A[ok], np.ones(ok.sum()))[0], M.predict(key, B, np.ones(len(B)))[0], M, sc
 
 
-DROP = {'tool_id', 'curve_id', 'tool_ng', 'assembly_ng', 'join_ng', 'use_count', 'cut_minutes', 'contact_min'}
+DROP = {'tool_id', 'curve_id', 'tool_ng', 'assembly_ng', 'join_ng', 'use_count', 'cut_minutes', 'contact_min',
+        'part_ng', 'weld_ng', 'cycle_id', 'stroke_id', 'sample_id', 'window_id'}
 
 
 def local_frame(df: pd.DataFrame, entity: str | None = 'tool_id', rel_n: int = 10) -> pd.DataFrame:

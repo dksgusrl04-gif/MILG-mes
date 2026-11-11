@@ -65,6 +65,7 @@ const ok = (c, m) => { if (c) pass++; else fails.push(m); console.log(`${c ? '�
   ok(await ev(() => /MILG 알림/.test(document.querySelector('#view').innerText) && /교체 기준 \d+회 전/.test(document.querySelector('#view').innerText)), '공구 수명 — MILG 알림 칸');
   await go('xai'); await W(); await p.click('[data-xa="tab|mct"]'); await W();
   ok(await ev(() => { const t = document.querySelector('#view').innerText; return /기준선 비교/.test(t) && /범용 부스팅/.test(t) && /MES 가공 기록 적용/.test(t); }), '공정 통합 AI — MCT 공구 모델 탭');
+  ok(await ev(() => { const t = document.querySelector('#view').innerText; return !MLNG.aiModel().packs || (/학습 팩 검증/.test(t) && /사출/.test(t) && /(적용|보류)/.test(t)); }), '공정 통합 AI — 사출 · 프레스 · 용접 학습 팩 검증 표');
   await p.click('#aiw .aiw-panel header [data-aiw="toggle"]'); await W(200);
 
   // 2.0 신뢰 계층

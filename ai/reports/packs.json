@@ -1,0 +1,622 @@
+{
+ "built": "2026-11-11 02:36",
+ "gate": 0.75,
+ "data": {
+  "inj_quality": {
+   "name": "사출 · 생산 데이터 (품질 라벨)",
+   "proc": "사출",
+   "source": "B2SHARE k0v7s-jf859 (CC BY 4.0)",
+   "license": "CC BY 4.0",
+   "label": "NOK 라벨",
+   "unit": "실험",
+   "rows": 564,
+   "events": 155,
+   "groups": 30,
+   "inputs": 114,
+   "input": "공정 전용 입력",
+   "models": {
+    "rule": {
+     "auc": 0.5015774114677813,
+     "capture10": 0.06451612903225806
+    },
+    "engine": {
+     "auc": 0.7658332676078555,
+     "capture10": 0.2645161290322581,
+     "recall": 0.7677419354838709,
+     "false_alarm": 0.4449877750611247
+    },
+    "plus": {
+     "auc": 0.9533559428977049,
+     "capture10": 0.32903225806451614,
+     "recall": 0.9870967741935484,
+     "false_alarm": 0.31295843520782396
+    },
+    "boost": {
+     "auc": 0.8312800694061045,
+     "capture10": 0.36129032258064514,
+     "recall": 0.8258064516129032,
+     "false_alarm": 0.3080684596577017
+    }
+   },
+   "folds": [
+    {
+     "group": "A01",
+     "rows": 24,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A02",
+     "rows": 24,
+     "events": 24,
+     "plus": null
+    },
+    {
+     "group": "A03",
+     "rows": 24,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A04",
+     "rows": 24,
+     "events": 24,
+     "plus": null
+    },
+    {
+     "group": "A05",
+     "rows": 24,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A06",
+     "rows": 24,
+     "events": 12,
+     "plus": 1.0
+    },
+    {
+     "group": "A07",
+     "rows": 24,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A08",
+     "rows": 24,
+     "events": 12,
+     "plus": 1.0
+    },
+    {
+     "group": "A09",
+     "rows": 24,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A10",
+     "rows": 24,
+     "events": 24,
+     "plus": null
+    },
+    {
+     "group": "A11",
+     "rows": 24,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A12",
+     "rows": 24,
+     "events": 24,
+     "plus": null
+    },
+    {
+     "group": "A13",
+     "rows": 24,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A14",
+     "rows": 24,
+     "events": 12,
+     "plus": 1.0
+    },
+    {
+     "group": "A15",
+     "rows": 25,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A16",
+     "rows": 23,
+     "events": 11,
+     "plus": 1.0
+    },
+    {
+     "group": "A20",
+     "rows": 12,
+     "events": 12,
+     "plus": null
+    },
+    {
+     "group": "A21",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A22",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A23",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A24",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A25",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A26",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A27",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A28",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A29",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A30",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A31",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "A32",
+     "rows": 12,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "Z01",
+     "rows": 24,
+     "events": 0,
+     "plus": null
+    }
+   ],
+   "apply": true,
+   "reason": "",
+   "model_file": "inj_quality_engine.json"
+  },
+  "inj_polenta": {
+   "name": "사출 · 품질 4등급 (AIRTLab)",
+   "proc": "사출",
+   "source": "Polenta 외 2022 (AIRTLab)",
+   "license": "미확인",
+   "label": "등급 1 (폐기) — 등급 뜻은 가정",
+   "unit": "행 구간",
+   "rows": 1451,
+   "events": 370,
+   "groups": 5,
+   "inputs": 13,
+   "input": "공정 전용 입력",
+   "models": {
+    "rule": {
+     "auc": 0.6487086531489862,
+     "capture10": 0.07567567567567568
+    },
+    "engine": {
+     "auc": 0.6607695577168288,
+     "capture10": 0.1891891891891892,
+     "recall": 0.4540540540540541,
+     "false_alarm": 0.17946345975948197
+    },
+    "plus": {
+     "auc": 0.8461559616971273,
+     "capture10": 0.2648648648648649,
+     "recall": 0.8189189189189189,
+     "false_alarm": 0.23959296947271044
+    },
+    "boost": {
+     "auc": 0.984856364227317,
+     "capture10": 0.3783783783783784,
+     "recall": 0.9891891891891892,
+     "false_alarm": 0.12025901942645699
+    }
+   },
+   "folds": [
+    {
+     "group": "구간1",
+     "rows": 291,
+     "events": 291,
+     "plus": null
+    },
+    {
+     "group": "구간2",
+     "rows": 290,
+     "events": 79,
+     "plus": 0.8969644249805028
+    },
+    {
+     "group": "구간3",
+     "rows": 290,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "구간4",
+     "rows": 290,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "구간5",
+     "rows": 290,
+     "events": 0,
+     "plus": null
+    }
+   ],
+   "apply": false,
+   "reason": "묶음 정보 없음 (라벨 순 정렬 · 시간 · LOT 없음)"
+  },
+  "press_fineblank": {
+   "name": "프레스 · 파인 블랭킹 펀치",
+   "proc": "프레스",
+   "source": "RWTH Aachen Fine-blanking (공개)",
+   "license": "미확인",
+   "label": "마모 ≥ 0.8 (실험 끝 = 1)",
+   "unit": "펀치(실험)",
+   "rows": 11923,
+   "events": 4143,
+   "groups": 4,
+   "inputs": 19,
+   "input": "교체 후 변화만",
+   "models": {
+    "rule": {
+     "auc": 0.3018857341059687,
+     "capture10": 0.0002413709872073377
+    },
+    "engine": {
+     "auc": 0.8059485693649957,
+     "capture10": 0.17137340091720976,
+     "recall": 0.0,
+     "false_alarm": 0.00038560411311053987
+    },
+    "plus": {
+     "auc": 0.7488926563032265,
+     "capture10": 0.1339608979000724,
+     "recall": 0.6548394882935071,
+     "false_alarm": 0.11336760925449871
+    },
+    "boost": {
+     "auc": 0.825547086887971,
+     "capture10": 0.16268404537774558,
+     "recall": 0.5351194786386676,
+     "false_alarm": 0.1366323907455013
+    }
+   },
+   "folds": [
+    {
+     "group": "E1",
+     "rows": 3322,
+     "events": 879,
+     "plus": 0.6198960881476504
+    },
+    {
+     "group": "E2",
+     "rows": 3203,
+     "events": 1615,
+     "plus": 0.9455973984449938
+    },
+    {
+     "group": "E3",
+     "rows": 2058,
+     "events": 1026,
+     "plus": 0.9910958490109857
+    },
+    {
+     "group": "E4",
+     "rows": 3340,
+     "events": 623,
+     "plus": 0.8835112256164888
+    }
+   ],
+   "apply": false,
+   "reason": "기준 미달 (AUC 0.75)"
+  },
+  "weld_arc": {
+   "name": "용접 · 아크 용접 (전류 · 전압)",
+   "proc": "용접",
+   "source": "Zenodo 15497262 (CC BY 4.0)",
+   "license": "CC BY 4.0",
+   "label": "라벨 0 (불량)",
+   "unit": "실험 묶음 (실험 4개)",
+   "rows": 15793,
+   "events": 9069,
+   "groups": 4,
+   "inputs": 42,
+   "input": "공정 전용 입력",
+   "models": {
+    "rule": {
+     "auc": 0.4681047818401181,
+     "capture10": 0.09405667659058331
+    },
+    "engine": {
+     "auc": 0.4009681640308169,
+     "capture10": 0.06781343036718492,
+     "recall": 0.12107178299702283,
+     "false_alarm": 0.16879833432480668
+    },
+    "plus": {
+     "auc": 0.7359266543255624,
+     "capture10": 0.16098798103429265,
+     "recall": 0.3991619803726982,
+     "false_alarm": 0.05889351576442594
+    },
+    "boost": {
+     "auc": 0.6797959316336667,
+     "capture10": 0.15371044216561913,
+     "recall": 0.3196603815194619,
+     "false_alarm": 0.09994051160023795
+    }
+   },
+   "folds": [
+    {
+     "group": "실험묶음1",
+     "rows": 3549,
+     "events": 2469,
+     "plus": 0.7122579241858302
+    },
+    {
+     "group": "실험묶음2",
+     "rows": 1792,
+     "events": 798,
+     "plus": 0.7045600671699369
+    },
+    {
+     "group": "실험묶음3",
+     "rows": 4680,
+     "events": 1874,
+     "plus": 0.7977852383708945
+    },
+    {
+     "group": "실험묶음4",
+     "rows": 5772,
+     "events": 3928,
+     "plus": 0.8283669500024299
+    }
+   ],
+   "apply": false,
+   "reason": "기준 미달 (AUC 0.75)"
+  },
+  "weld_rsw": {
+   "name": "용접 · 저항 점용접",
+   "proc": "용접",
+   "source": "Mendeley rwh8kjzdch (CC BY 4.0)",
+   "license": "CC BY 4.0",
+   "label": "Bad · Explode",
+   "unit": "조건(압력 × 시간)",
+   "rows": 495,
+   "events": 52,
+   "groups": 12,
+   "inputs": 13,
+   "input": "공정 전용 입력",
+   "models": {
+    "rule": {
+     "auc": 0.7142733113387741,
+     "capture10": 0.4423076923076923
+    },
+    "engine": {
+     "auc": 0.5785726688661226,
+     "capture10": 0.19230769230769232,
+     "recall": 0.17307692307692307,
+     "false_alarm": 0.05417607223476298
+    },
+    "plus": {
+     "auc": 0.7135787463101233,
+     "capture10": 0.2692307692307692,
+     "recall": 0.75,
+     "false_alarm": 0.43340857787810383
+    },
+    "boost": {
+     "auc": 0.807518666435145,
+     "capture10": 0.5192307692307693,
+     "recall": 0.5961538461538461,
+     "false_alarm": 0.16930022573363432
+    }
+   },
+   "folds": [
+    {
+     "group": "P35·T1500",
+     "rows": 8,
+     "events": 3,
+     "plus": 0.4666666666666667
+    },
+    {
+     "group": "P35·T200",
+     "rows": 8,
+     "events": 8,
+     "plus": null
+    },
+    {
+     "group": "P60·T1000",
+     "rows": 72,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "P60·T1200",
+     "rows": 60,
+     "events": 5,
+     "plus": 0.6218181818181818
+    },
+    {
+     "group": "P60·T400",
+     "rows": 99,
+     "events": 9,
+     "plus": 0.7987654320987654
+    },
+    {
+     "group": "P60·T600",
+     "rows": 51,
+     "events": 9,
+     "plus": 0.6296296296296297
+    },
+    {
+     "group": "P60·T800",
+     "rows": 50,
+     "events": 5,
+     "plus": 0.7155555555555555
+    },
+    {
+     "group": "P80·T1000",
+     "rows": 29,
+     "events": 0,
+     "plus": null
+    },
+    {
+     "group": "P80·T600",
+     "rows": 50,
+     "events": 1,
+     "plus": 0.8775510204081632
+    },
+    {
+     "group": "P80·T800",
+     "rows": 51,
+     "events": 1,
+     "plus": 0.82
+    },
+    {
+     "group": "P95·T1500",
+     "rows": 8,
+     "events": 2,
+     "plus": 0.3333333333333333
+    },
+    {
+     "group": "P95·T200",
+     "rows": 9,
+     "events": 9,
+     "plus": null
+    }
+   ],
+   "apply": false,
+   "reason": "기준 미달 (AUC 0.75)"
+  }
+ },
+ "skipped": [
+  [
+   "사출",
+   "Production Data (d-optimal DoE)",
+   "정상 303건뿐 (NOK 0)",
+   "보류"
+  ],
+  [
+   "사출",
+   "Foxconn 사출 치수",
+   "사용 조건(라이선스) 미확인",
+   "보류"
+  ],
+  [
+   "사출",
+   "Uni Kassel 사출 + 체결 연계",
+   "조건 변경 실험 — 불량 라벨 아님 (설정값이 곧 정답)",
+   "보류"
+  ],
+  [
+   "사출",
+   "SKZ 점도 센서",
+   "68건 · 불량 라벨 없음",
+   "부적합"
+  ],
+  [
+   "사출",
+   "AD-STGN (CMMS)",
+   "칼럼 이름 익명 · 정답은 시험 111건뿐",
+   "부적합"
+  ],
+  [
+   "사출",
+   "RWTH 재생 PP · IMM · Preform · Mendeley DataModel",
+   "제어 실험 곡선 · 시뮬레이션 27건 · 머리글만 — 불량 라벨 없음",
+   "부적합"
+  ],
+  [
+   "프레스",
+   "RDDAC (DaRUS 2026)",
+   "분류값이 공정 조건 18종 (불량 아님)",
+   "부적합"
+  ],
+  [
+   "프레스",
+   "Deep drawing 힘 곡선 (합성 요건)",
+   "조건당 기록 1개 — 통째로 빼는 검증 불가",
+   "보류"
+  ],
+  [
+   "프레스",
+   "Fine-blanking DiCo · Stuttgart 시뮬레이션 · Air bending · Tube bending",
+   "회귀 · 시뮬레이션 · 스프링백 — 불량 라벨 없음",
+   "부적합"
+  ],
+  [
+   "용접",
+   "RSW 차체 (GitHub)",
+   "CC BY-NC 4.0 — 상용 학습 불가",
+   "제외"
+  ],
+  [
+   "용접",
+   "레이저 배터리 탭 (포토다이오드)",
+   "약 150건 · 원신호 rar",
+   "보류"
+  ],
+  [
+   "용접",
+   "레이저 맞대기 (LWIR)",
+   "열화상 프레임 라벨 — 영상 모델 필요",
+   "보류"
+  ],
+  [
+   "용접",
+   "GMAW 비드 형상 2종 · CMT 프로파일 · RSW benchmark · Refill FSSW",
+   "형상 회귀 · 코드만 · 7z (미확인)",
+   "부적합"
+  ]
+ ]
+}

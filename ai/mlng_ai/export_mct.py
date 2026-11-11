@@ -91,6 +91,10 @@ def _bench() -> list[dict]:
             r = P.get(k) or {}
             if 'plus' in r:
                 out.append({'name': name, 'size': f"곡선 {r['rows']}개", 'unit': f"{r['unit']}을 통째로 뺌", 'rule': _r(r['rule']['auc'], 2), 'engine': _r(r['plus']['auc'], 2), 'boost': None, 'input': '곡선 5구간 · 양쪽 벗어남'})
+    p = REPORTS / 'packs.json'                                  # 사출 · 프레스 · 용접 학습 팩 중 적용된 것
+    if p.exists():
+        from .packs import web_rows
+        out += web_rows(json.loads(p.read_text(encoding='utf-8')))
     return out
 
 
