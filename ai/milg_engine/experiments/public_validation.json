@@ -1,0 +1,327 @@
+{
+  "A_HMoTP": {
+    "per_tool": {
+      "T01": {
+        "n_bad": 33,
+        "n_ok": 44,
+        "auc": 0.878,
+        "detect_warn_or_ng": 0.97,
+        "detect_ng": 0.97,
+        "false_alarm_warn_or_ng": 0.455,
+        "false_alarm_ng": 0.455,
+        "first_sustained_alarm_wear": 58.6
+      },
+      "T02": {
+        "n_bad": 27,
+        "n_ok": 44,
+        "auc": 0.999,
+        "detect_warn_or_ng": 1.0,
+        "detect_ng": 1.0,
+        "false_alarm_warn_or_ng": 0.295,
+        "false_alarm_ng": 0.295,
+        "first_sustained_alarm_wear": 91.4
+      },
+      "T03": {
+        "n_bad": 29,
+        "n_ok": 42,
+        "auc": 0.994,
+        "detect_warn_or_ng": 1.0,
+        "detect_ng": 1.0,
+        "false_alarm_warn_or_ng": 0.214,
+        "false_alarm_ng": 0.214,
+        "first_sustained_alarm_wear": 99.2
+      }
+    },
+    "pooled": {
+      "n_bad": 89,
+      "n_ok": 130,
+      "auc": 0.955,
+      "detect_warn_or_ng": 0.989,
+      "detect_ng": 0.989,
+      "false_alarm_warn_or_ng": 0.323,
+      "false_alarm_ng": 0.323
+    },
+    "rule": "불량=마모≥150, 정상=마모<100, 기준=다른 공구의 마모<100 절삭"
+  },
+  "B_NASA_mill": {
+    "pooled": {
+      "n_bad": 70,
+      "n_ok": 36,
+      "auc": 0.405,
+      "detect_warn_or_ng": 0.343,
+      "detect_ng": 0.3,
+      "false_alarm_warn_or_ng": 0.5,
+      "false_alarm_ng": 0.5
+    },
+    "runs": 146,
+    "rule": "불량=VB≥0.3mm, 정상=VB<0.15mm, 맥락=절삭깊이·이송·소재, 케이스 하나씩 빼서 평가"
+  },
+  "C_CNC_mill": {
+    "experiments": 25,
+    "worn": 14,
+    "auc_mean_score": 0.266,
+    "auc_share_warn": 0.25,
+    "worn_median_share_warn": 0.25,
+    "unworn_median_share_warn": 0.5,
+    "rule": "단위=실험×가공단계(Layer), 맥락=가공단계·이송속도, 기준=다른 실험의 unworn, 실험 단위 AUC"
+  },
+  "D_ProBayes": {
+    "pooled": {
+      "n_bad": 155,
+      "n_ok": 409,
+      "auc": 0.73,
+      "detect_warn_or_ng": 0.581,
+      "detect_ng": 0.51,
+      "false_alarm_warn_or_ng": 0.262,
+      "false_alarm_ng": 0.152
+    },
+    "features": 63,
+    "per_experiment": {
+      "A01": {
+        "nok": 0,
+        "ok": 24,
+        "flag_warn": 0.0
+      },
+      "A02": {
+        "nok": 24,
+        "ok": 0,
+        "flag_warn": 0.5
+      },
+      "A03": {
+        "nok": 0,
+        "ok": 24,
+        "flag_warn": 0.5
+      },
+      "A04": {
+        "nok": 24,
+        "ok": 0,
+        "flag_warn": 0.42
+      },
+      "A05": {
+        "nok": 0,
+        "ok": 24,
+        "flag_warn": 0.04
+      },
+      "A06": {
+        "nok": 12,
+        "ok": 12,
+        "flag_warn": 0.5
+      },
+      "A07": {
+        "nok": 0,
+        "ok": 24,
+        "flag_warn": 0.5
+      },
+      "A08": {
+        "nok": 12,
+        "ok": 12,
+        "flag_warn": 0.46
+      },
+      "A09": {
+        "nok": 0,
+        "ok": 24,
+        "flag_warn": 0.17
+      },
+      "A10": {
+        "nok": 24,
+        "ok": 0,
+        "flag_warn": 0.5
+      },
+      "A11": {
+        "nok": 0,
+        "ok": 24,
+        "flag_warn": 0.21
+      },
+      "A12": {
+        "nok": 24,
+        "ok": 0,
+        "flag_warn": 0.5
+      },
+      "A13": {
+        "nok": 0,
+        "ok": 24,
+        "flag_warn": 0.0
+      },
+      "A14": {
+        "nok": 12,
+        "ok": 12,
+        "flag_warn": 1.0
+      },
+      "A15": {
+        "nok": 0,
+        "ok": 25,
+        "flag_warn": 0.64
+      },
+      "A16": {
+        "nok": 11,
+        "ok": 12,
+        "flag_warn": 0.7
+      },
+      "A20": {
+        "nok": 12,
+        "ok": 0,
+        "flag_warn": 0.0
+      },
+      "A21": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 1.0
+      },
+      "A22": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 0.0
+      },
+      "A23": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 0.0
+      },
+      "A24": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 0.08
+      },
+      "A25": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 0.0
+      },
+      "A26": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 0.0
+      },
+      "A27": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 0.08
+      },
+      "A28": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 1.0
+      },
+      "A29": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 0.0
+      },
+      "A30": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 0.0
+      },
+      "A31": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 1.0
+      },
+      "A32": {
+        "nok": 0,
+        "ok": 12,
+        "flag_warn": 0.0
+      },
+      "Z01": {
+        "nok": 0,
+        "ok": 24,
+        "flag_warn": 0.0
+      }
+    },
+    "rule": "설비 측정값만(QUA_·TCE/TCN 평균), 기준=다른 실험조건의 OK 사이클, 실험조건 하나씩 빼서 평가"
+  },
+  "A2_HMoTP_self": {
+    "per_tool": {
+      "T01": {
+        "n_bad": 33,
+        "n_ok": 34,
+        "auc": 0.987,
+        "detect_warn_or_ng": 1.0,
+        "detect_ng": 1.0,
+        "false_alarm_warn_or_ng": 1.0,
+        "false_alarm_ng": 1.0,
+        "first_sustained_alarm_wear": 40.4,
+        "baseline_wear_max": 39.1
+      },
+      "T02": {
+        "n_bad": 27,
+        "n_ok": 34,
+        "auc": 1.0,
+        "detect_warn_or_ng": 1.0,
+        "detect_ng": 1.0,
+        "false_alarm_warn_or_ng": 1.0,
+        "false_alarm_ng": 1.0,
+        "first_sustained_alarm_wear": 59.4,
+        "baseline_wear_max": 57.4
+      },
+      "T03": {
+        "n_bad": 29,
+        "n_ok": 32,
+        "auc": 0.999,
+        "detect_warn_or_ng": 1.0,
+        "detect_ng": 1.0,
+        "false_alarm_warn_or_ng": 1.0,
+        "false_alarm_ng": 1.0,
+        "first_sustained_alarm_wear": 30.2,
+        "baseline_wear_max": 27.0
+      }
+    },
+    "pooled": {
+      "n_bad": 89,
+      "n_ok": 100,
+      "auc": 0.995,
+      "detect_warn_or_ng": 1.0,
+      "detect_ng": 1.0,
+      "false_alarm_warn_or_ng": 1.0,
+      "false_alarm_ng": 1.0
+    },
+    "rule": "기준=같은 공구 첫 10회, 불량=마모≥150, 정상=마모<100"
+  },
+  "A3_HMoTP_self_calibrated": {
+    "per_tool": {
+      "T01": {
+        "n_bad": 33,
+        "n_ok": 34,
+        "auc": 1.0,
+        "detect_warn_or_ng": 1.0,
+        "detect_ng": 1.0,
+        "false_alarm_warn_or_ng": 0.176,
+        "false_alarm_ng": 0.176,
+        "first_alarm_wear": 73.6,
+        "threshold": 2.941
+      },
+      "T02": {
+        "n_bad": 27,
+        "n_ok": 34,
+        "auc": 1.0,
+        "detect_warn_or_ng": 1.0,
+        "detect_ng": 1.0,
+        "false_alarm_warn_or_ng": 0.059,
+        "false_alarm_ng": 0.059,
+        "first_alarm_wear": 92.7,
+        "threshold": 3.219
+      },
+      "T03": {
+        "n_bad": 29,
+        "n_ok": 32,
+        "auc": 1.0,
+        "detect_warn_or_ng": 1.0,
+        "detect_ng": 1.0,
+        "false_alarm_warn_or_ng": 0.031,
+        "false_alarm_ng": 0.031,
+        "first_alarm_wear": 99.2,
+        "threshold": 3.125
+      }
+    },
+    "pooled": {
+      "n_bad": 89,
+      "n_ok": 100,
+      "auc": 0.999,
+      "detect_warn_or_ng": 1.0,
+      "detect_ng": 1.0,
+      "false_alarm_warn_or_ng": 0.09,
+      "false_alarm_ng": 0.09
+    },
+    "rule": "점수=같은 공구 첫 10회 대비 이탈(3회 이동 중앙값), 임계값=다른 공구들이 마모 125일 때 점수의 중앙값"
+  }
+}

@@ -1,0 +1,37 @@
+scenario: PRF-01
+process: 프레스
+title: 프레스(소성가공) 설비 진동·전류 이상 탐지 (KAMP 소성가공 예지보전)
+question: 지금 2초 동안의 진동·전류가 정상 운전 범위를 벗어났는가?
+data_root: ../..
+
+unit:
+  type: windows                 # 사이클 표시가 없는 연속 스트림 → 2초(20행, 10Hz) 창 1개 = 단위 1개
+  paths: "프레스/_extracted/MILG_04_Press_Forming/*_data*.csv"
+  rows: 20
+  time: TimeStamp
+  channels: [AI0_Vibration, AI1_Vibration, AI2_Current]
+  stats: [mean, std, min, max, rms, p2p, kurt]
+
+task: anomaly
+
+features:
+  exclude: [window_index]
+
+split:
+  method: time                  # 정상 운전 앞 부분 = 기준, 뒤 부분 + 이상 상태 = 평가
+  column: t0
+  test_size: 0.33
+
+anomaly:
+  top_k: 3
+  warn_quantile: 0.95
+  ng_quantile: 0.99
+  label_eval:
+    column: source_file         # 이상 상태(Equipment_state=1) 구간이 별도 파일로 제공됨
+    positive: [outlier_data.csv]
+
+output:
+  carry_columns: [source_file, t0]
+
+notes:
+  - 이상 데이터는 정상과 다른 날(7/17) 2분 분량(30개 창)뿐이다. 날짜 차이 자체가 섞였을 수 있어 방향 확인용이다.

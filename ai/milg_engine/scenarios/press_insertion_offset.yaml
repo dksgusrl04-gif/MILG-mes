@@ -1,0 +1,39 @@
+scenario: PRS-01
+process: 압입
+title: 힘·토크 프로파일로 삽입 정렬 불량 탐지 (kd-feb4)
+question: 이번 삽입이 위치가 틀어진 채 들어갔는가?
+data_root: ../..
+
+unit:
+  type: files
+  root: 압입/insertion-dataset/kd-feb4
+  glob: "*/*/*.csv"
+  path_regex: "^(?P<setup>\\d+)/(?P<offset>[^/]+)/ft_"
+  header: null
+  names: [Fx, Fy, Fz, Tx, Ty, Tz]
+  stats: [len, mean, std, min, max, rms, p2p, q95]
+  segments: 3
+
+task: binary
+label:
+  source: path_group
+  group: offset
+  negative: ["0"]          # 정위치(0)만 정상, x±n / y±n 편심은 NG
+
+split:
+  method: group            # 셋업(1~4) 단위로 묶어서, 처음 보는 셋업으로 평가
+  group: setup
+  test_groups: ["4"]
+
+model:
+  candidates: [logistic, random_forest, hgb, milg]
+
+decision:
+  type: threshold_for_recall
+  target_recall: 0.9
+
+output:
+  carry_columns: [setup, offset]
+
+notes:
+  - 편심 데이터가 정상보다 많은 실험 데이터라 실제 라인 불량률과 다르다.

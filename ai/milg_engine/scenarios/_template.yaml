@@ -1,0 +1,74 @@
+# ───────────────────────────────────────────────────────────────
+# MILG 시나리오 템플릿 — 공정이 바뀌면 이 파일만 새로 쓴다. 엔진(engine.py)은 그대로.
+# 파일명이 _ 로 시작하면 실행 대상에서 빠진다.
+# ───────────────────────────────────────────────────────────────
+scenario: XXX-01              # 고유 ID (출력 폴더 이름)
+process: 공정명                # 사출 / 압입 / 열처리 / MCT ...
+title: 한 줄 제목
+question: "현장이 묻는 질문 (예: 이번 샷이 불량인가?)"
+data_root: ../..              # 이 파일 위치 기준 데이터 루트
+
+# 1) 판정 단위 — 셋 중 하나
+unit:
+  type: table                 # 행 1개 = 단위 1개 (샷·사이클 요약 테이블)
+  path: 경로/파일.csv
+  id: 고유ID컬럼               # 생략 시 행 번호
+  # sep: ";"   encoding: auto(utf-8 → cp949 자동)
+
+# unit:
+#   type: grouped_table       # 초 단위 원천 → 키(로트·배정번호)별 집계
+#   path: 경로/data.csv
+#   key: 배정번호
+#   stats: [mean, std, min, max]
+#   drop_columns: [TAG_MIN]
+
+# unit:
+#   type: files               # 파일 1개 = 단위 1개 (삽입 1회, 절삭 1회의 시계열)
+#   root: 폴더
+#   glob: "**/*.csv"
+#   path_regex: "(?P<group>[^/]+)/(?P<cls>[^/]+)/.*\\.csv"   # 이름 그룹 → 메타 컬럼
+#   header: null              # 헤더 없는 파일이면 names 지정
+#   names: [Fx, Fy, Fz]
+#   stats: [mean, std, min, max, rms, p2p]
+#   segments: 3               # 구간(초반·중반·후반)별 통계도 추가
+
+filters:                      # 선택: 설비·품번 한정
+  - {column: 설비컬럼, eq: 설비A}
+
+# 2) 정답
+task: binary                  # binary / multiclass / regression
+label:
+  source: column              # column / path_group / join / lookup_by_index
+  column: 판정컬럼
+  positive: [NG]              # 불량값 (또는 negative: [정상값])
+  # threshold: {op: ">", value: 450}   # 연속값을 이진으로 (join + expr 와 함께)
+
+# 3) 특성
+features:
+  exclude: [식별자, 날짜, 사유컬럼]   # 누수·식별자 컬럼은 반드시 제외
+  # include: ["*_Temperature_*"]     # 생략하면 숫자 컬럼 자동
+  max_missing: 0.5
+
+# 4) 평가 분할 — 현장 배포와 같은 조건으로
+split:
+  method: time                # random / group(설비·금형·공구 단위) / time(과거→미래)
+  column: TimeStamp
+  test_size: 0.3
+
+# 5) 모델 후보 (baseline은 자동 포함)
+model:
+  candidates: [logistic, random_forest, hgb, milg]   # 회귀: [ridge, random_forest, hgb]
+
+# 6) 판정 규칙
+decision:
+  type: threshold_for_recall  # 이진: 불량 재현율 목표를 맞추는 임계값을 학습 구간에서 정함
+  target_recall: 0.9
+  warn_ratio: 0.5             # 임계값의 50% 이상은 WARN
+  # type: limit  limit: 150  warn_ratio: 0.8  action: stop   # 회귀: 관리 한계
+
+# 7) MES 출력에 같이 실을 컬럼
+output:
+  carry_columns: [PART_NAME]
+
+notes:
+  - 결과 해석 시 주의할 점

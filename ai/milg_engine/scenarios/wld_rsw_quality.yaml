@@ -1,0 +1,45 @@
+scenario: WLD-02
+process: 용접
+title: 저항 점용접 품질 판정 — 용접 조건 + 가압력·전류 측정값 (RSW Insights, 495 시편)
+question: 이 시편의 용접이 불량(접합 불량·날림)인가?
+data_root: ../..
+
+unit:
+  type: grouped_table           # 시편 1개에 측정 행이 여러 개 → 시편별 집계
+  path: 용접/_extracted/MILG_03_Spot_Welding/01_CC_BY_4_0_RSW_Insights/Data_RSW.csv
+  key: Sample ID
+  stats: [mean, std, min, max]
+
+derive:
+  - {name: condition, from: ["Pressure (PSI)__mean", "Welding Time (ms)__mean", "Angle (Deg)__mean"], fn: concat}
+
+task: binary
+label:
+  source: join
+  path: 용접/_extracted/MILG_03_Spot_Welding/01_CC_BY_4_0_RSW_Insights/Data_RSW.csv
+  label_key: Sample ID
+  column: Category
+  positive: [Bad, Explode]      # 접합 불량 + 날림(expulsion)
+
+features:
+  exclude: [Sample ID, n_samples, condition]
+  exclude_glob: ["PullTest*", "NuggetDiameter*"]   # 검사 결과값 → 입력에서 제외 (누수)
+
+split:
+  method: group                 # 같은 용접 조건(압력·시간·각도)이 학습·평가에 동시에 들어가지 않게
+  group: condition
+  test_size: 0.3
+  seed: 7
+
+model:
+  candidates: [logistic, random_forest, hgb, milg]
+
+decision:
+  type: threshold_for_recall
+  target_recall: 0.8
+
+output:
+  carry_columns: [condition]
+
+notes:
+  - 19개 조건 중 일부를 통째로 평가에 빼므로, 처음 보는 조건에서의 성능이다.

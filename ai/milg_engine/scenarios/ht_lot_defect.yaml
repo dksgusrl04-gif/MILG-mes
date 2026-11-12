@@ -1,0 +1,43 @@
+scenario: HT-01
+process: 열처리
+title: 열처리 로트(배정번호) 불량률 위험 판정 (KAMP 염욕)
+question: 이 배정번호 로트가 불량률 위험군인가?
+data_root: ../..
+
+unit:
+  type: grouped_table
+  path: 열처리/열처리-20261109T041514Z-1-001/열처리/Dataset_열처리 품질보증 AI 데이터셋/data/data.csv
+  key: 배정번호
+  stats: [mean, std, min, max]
+  drop_columns: [TAG_MIN]
+
+task: binary
+label:
+  source: join
+  path: 열처리/열처리-20261109T041514Z-1-001/열처리/Dataset_열처리 품질보증 AI 데이터셋/data/열처리_품질데이터.xlsx
+  label_key: 배정번호
+  expr: "불량수량 / 총수량 * 1000000"     # ppm
+  threshold: {op: ">", value: 450}      # 상위 25% 수준을 위험군으로
+  carry_columns: [작업일]
+
+features:
+  exclude: [배정번호, n_samples]
+
+split:
+  method: time
+  column: 작업일
+  test_size: 0.3
+
+model:
+  candidates: [logistic, random_forest, hgb, milg]
+
+decision:
+  type: threshold_for_recall
+  target_recall: 0.8
+
+output:
+  carry_columns: [작업일]
+
+notes:
+  - 로트 136개라 평가 구간이 40개 내외. 모델 비교보다 방향 확인용.
+  - 위험군 기준 450ppm은 임시값. 현장 관리 기준으로 바꿀 것.

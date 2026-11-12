@@ -1,0 +1,45 @@
+scenario: WLD-01
+process: 용접
+title: 자동차 차체 저항 점용접 파형 이상 탐지 — 같은 용접 위치끼리 비교 (Politecnico, 1,976점)
+question: 이번 용접점의 전류·전압·가압력 파형이 같은 위치의 양품 용접과 다른가?
+data_root: ../..
+
+unit:
+  type: table
+  path: 용접/_extracted/MILG_03_Spot_Welding/03_RESEARCH_ONLY_CC_BY_NC_4_0_Politecnico/current.csv
+  merge:                        # 같은 키로 나뉜 파형 파일과 라벨 합치기
+    - {path: 용접/_extracted/MILG_03_Spot_Welding/03_RESEARCH_ONLY_CC_BY_NC_4_0_Politecnico/voltage.csv, keys: [Car Body, Welding Spot, Date]}
+    - {path: 용접/_extracted/MILG_03_Spot_Welding/03_RESEARCH_ONLY_CC_BY_NC_4_0_Politecnico/force.csv, keys: [Car Body, Welding Spot, Date]}
+    - {path: 용접/_extracted/MILG_03_Spot_Welding/03_RESEARCH_ONLY_CC_BY_NC_4_0_Politecnico/labels.csv, keys: [Car Body, Welding Spot, Date]}
+  wide_series:                  # 한 행에 1,000칸으로 펼쳐진 파형 → 실제 길이(0 채움 제외) 기준 통계
+    groups: {Current: "Current T-*", Voltage: "Voltage T-*", Force: "Force T-*"}
+    stats: [mean, std, max, min, rms, auc]
+    segments: 3                 # 앞·중간·뒤 구간별로도
+    trim_zeros: true
+
+task: anomaly
+
+features:
+  exclude: [Car Body, Welding Spot, Fault]
+
+split:
+  method: time                  # 앞 2/3 기간 = 기준, 뒤 1/3 = 평가
+  column: Date
+  test_size: 0.33
+
+anomaly:
+  context: [Welding Spot]       # 용접 위치(158곳)마다 기준을 따로
+  min_context_units: 4
+  top_k: 3
+  warn_quantile: 0.95
+  ng_quantile: 0.99
+  label_eval:
+    column: Fault
+    positive: [1]
+
+output:
+  carry_columns: [Car Body, Welding Spot, Date, Fault]
+
+notes:
+  - 라이선스 CC BY-NC 4.0 — 비상업 연구·캡스톤용. MILG 상용 학습·배포에는 쓰지 않는다.
+  - 파형은 원본에서 이미 0~1로 정규화돼 있다.

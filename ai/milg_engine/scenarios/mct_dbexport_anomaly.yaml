@@ -1,0 +1,77 @@
+scenario: MCT-02
+process: MCT
+title: 두산 MCT 설비 로그 — 양품 데이터로 공구별 정상 범위 학습
+question: 이 공구의 이번 절삭이 양품 때의 정상 범위를 벗어났는가?
+data_root: ../..
+
+# 판정 단위: 같은 공구번호·같은 프로그램으로 끊김 없이(5초 이내) 이어진 '절삭' 구간 1개
+unit:
+  type: segments
+  paths: "MCT/DBexport_*.csv"
+  time: Update_time
+  segment_by: [ToolNo, RunPGM]
+  row_filter: {column: RunState, in: ["가동중·절삭"]}
+  max_gap_sec: 5
+  min_rows: 20
+  channels: [SpindleLoad, SpindleRPM, Feed, X_Current, Y_Current, Z_Current,
+             Cur_R_A, Cur_S_A, Cur_T_A, Vib_X_mms, Vib_Y_mms, Vib_Z_mms,
+             Vib_AccX, Vib_AccY, Vib_AccZ, Vib_FreqX, Vib_FreqY, Vib_FreqZ, Vib_Temp]
+  stats: [mean, std, max]
+  # 위치 셀 (Netzer 등 2021): 구간 안을 이송축 위치 5mm(B축 5도) 격자로 나눠 셀별 평균을 따로 저장
+  # 블록 번호(SEQ·ExecBlkNo)가 수집되지 않아 '같은 동작'을 위치로 맞춘다
+  cells:
+    columns: [X_Mac, Y_Mac, Z_Mac, B_AxisPos]
+    step: 5
+    channels: [Cur_R_A, Cur_S_A, Cur_T_A, SpindleLoad, Vib_X_mms, Vib_Y_mms, Vib_Z_mms, Y_Current]
+
+task: anomaly                 # 실데이터가 모두 양품 → 정상 범위만 학습 (one-class)
+
+features:
+  exclude: [ToolNo, RunPGM, rows, _seg_local, SpindleRPM__std, Feed__std]
+
+split:
+  method: time                # 앞 2/3 기간 = 기준, 뒤 1/3 = 평가
+  column: t0
+  test_size: 0.33
+
+anomaly:
+  context: [ToolNo, RunPGM]   # 같은 공구·같은 프로그램끼리 비교
+  min_context_units: 10
+  top_k: 3
+  warn_quantile: 0.95
+  ng_quantile: 0.99
+  threshold_scope: global     # context로 바꾸면 하위 공정별 임계값 (실험에서 오경보가 늘어 기본은 global)
+  cell_baseline:              # 같은 공구·프로그램·위치 셀의 기준 구간 대비 편차를 특성으로 추가
+    channels: [Cur_R_A, Cur_S_A, Cur_T_A, SpindleLoad, Vib_X_mms, Vib_Y_mms, Vib_Z_mms, Y_Current]
+    min_train: 5
+    tail_quantile: 0.9        # 구간 안에서 가장 많이 벗어난 셀(상위 10%)도 특성으로 → 진행 중 마모·국부 이상 감도 향상
+  trend_by: ToolNo
+  normal_only: true           # 데이터가 전부 양품 → WARN·NG = 오경보
+  sensitivity:                # 불량 샘플 대신, 양품 신호를 일부러 키워 감도 확인
+    - name: 3상 전류 증가
+      columns: ["Cur_*_A__*"]
+      cell_channels: [Cur_R_A, Cur_S_A, Cur_T_A]
+      factors: [1.05, 1.1, 1.2, 1.3, 1.5]
+    - name: 스핀들 부하 증가
+      columns: ["SpindleLoad__*"]
+      cell_channels: [SpindleLoad]
+      factors: [1.1, 1.2, 1.3, 1.5, 2.0]
+    - name: 진동 증가
+      columns: ["Vib_*_mms__*", "Vib_Acc*__*"]
+      cell_channels: [Vib_X_mms, Vib_Y_mms, Vib_Z_mms]
+      factors: [1.1, 1.2, 1.3, 1.5, 2.0]
+    - name: Y축 전류 증가
+      columns: ["Y_Current__*"]
+      cell_channels: [Y_Current]
+      factors: [1.1, 1.2, 1.5]
+
+audit:                        # 데이터 수집 진단 (DMME)
+  watch: [SpindleLoad, SEQ, ExecBlkNo, Cur_R_A]
+
+output:
+  carry_columns: [ToolNo, RunPGM, t0, t1, duration_sec, source_file]
+
+notes:
+  - 실데이터는 모두 양품입니다. WARN·NG는 전부 오경보이고, 평가 구간 비율이 현장 예상 오경보율입니다.
+  - 불량 샘플이 없어 실제 불량 탐지율은 아직 잴 수 없습니다. 민감도 점검은 인위적으로 만든 변화에 대한 감도입니다.
+  - 점수가 시간에 따라 오르는 공구도 양품 범위 안의 변화입니다. 마모 판단에는 교체 기록이나 불량 샘플이 필요합니다.

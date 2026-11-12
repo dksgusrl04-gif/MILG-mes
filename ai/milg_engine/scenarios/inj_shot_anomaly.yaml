@@ -1,0 +1,50 @@
+scenario: INJ-03
+process: 사출
+title: 사출 샷 이상 탐지 — 양품 샷으로 정상 범위 학습 + 같은 날 직전 샷 기준 (KAMP 650톤 CN7)
+question: 방금 나온 샷이 오늘 직전 샷들과 비교해 정상 범위를 벗어났는가?
+data_root: ../..
+
+unit:
+  type: table
+  path: 사출/04. Dataset_Molding/dataset/labeled_data.csv
+  pre_filters:
+    - {column: EQUIP_NAME, eq: 650톤-우진2호기}
+    - {column: PART_NAME, in: ["CN7 W/S SIDE MLD'G LH", "CN7 W/S SIDE MLD'G RH"]}
+  collapse:                # LH·RH 중복 기록 → 샷 1개
+    dedupe: [_id]
+    key: TimeStamp
+    any: {PassOrFail: [N]}
+
+derive:
+  - {name: work_date, from: TimeStamp, fn: date}
+
+task: anomaly              # 불량 20샷·3종류로는 지도학습이 일반화되지 않아(날짜를 바꾸면 오경보 54%) 정상 범위 방식으로
+
+features:
+  exclude: [_id, TimeStamp, PART_FACT_PLAN_DATE, PART_FACT_SERIAL, PART_NAME, EQUIP_CD, EQUIP_NAME, Reason, rows_merged, PassOrFail]
+  trailing_baseline:       # 같은 작업일 직전 50샷의 중앙값 대비 편차 → 날마다 다른 금형 온도 등 일간 차이를 흡수
+    by: work_date
+    order: TimeStamp
+    window: 50
+    min_periods: 10        # 가동 직후 10샷은 원래 값 그대로 비교(→ 초기 불량은 그대로 드러남)
+
+split:
+  method: group            # 불량이 없는 4일(10/19·20·29·30) = 기준, 불량이 있는 3일 = 평가
+  group: work_date
+  test_groups: ["2020-10-16", "2020-10-27", "2020-11-03"]
+
+anomaly:
+  top_k: 3
+  warn_quantile: 0.95
+  ng_quantile: 0.99
+  min_context_units: 10
+  label_eval:              # 실제 불량 라벨로 검출률 평가 (기준 구간의 불량은 빼고 양품만으로 정상 범위)
+    column: PassOrFail
+    positive: [N]
+
+output:
+  carry_columns: [TimeStamp, work_date, PassOrFail, Reason]
+
+notes:
+  - 가동 초기 불량(10/27, 5샷)은 잘 잡히지만 가스·미성형(10/16)은 공정 요약값에 드러나지 않아 거의 못 잡는다.
+  - 불량 샷이 20개뿐이라 수치는 방향 확인용이다.

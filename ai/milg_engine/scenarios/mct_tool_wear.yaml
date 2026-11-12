@@ -1,0 +1,43 @@
+scenario: MCT-01
+process: MCT
+title: 절삭 신호로 공구 마모량 추정 (HMoTP 2024)
+question: 지금 공구 마모가 얼마나 진행됐고, 교체해야 하는가?
+data_root: ../..
+
+unit:
+  type: files
+  root: MCT/HMoTP 2024-20261012T030348Z-1-001 (1)/HMoTP 2024
+  glob: "CuttingSignalsT*/*.csv"
+  path_regex: "CuttingSignals(?P<tool>T\\d+)/T\\d+_(?P<cut>\\d+)\\.csv"
+  stats: [mean, std, rms, p2p, q95, kurt]
+
+task: regression
+label:
+  source: lookup_by_index
+  path_template: "MCT/HMoTP 2024-20261012T030348Z-1-001 (1)/HMoTP 2024/ToolWear{tool}.csv"
+  index_group: cut
+  index_base: 1
+  column: Mean
+
+features:
+  exclude: [cut]           # 가공 횟수는 MES가 아는 값이지만, 신호만으로 되는지 보려고 뺐다
+
+split:
+  method: group            # 공구 단위로 묶어 처음 보는 공구로 평가
+  group: tool
+  test_groups: ["T03"]
+
+model:
+  candidates: [ridge, random_forest, hgb]
+
+decision:
+  type: limit
+  limit: 150               # 마모 한계(임시값)
+  warn_ratio: 0.8
+  action: stop
+
+output:
+  carry_columns: [tool, cut]
+
+notes:
+  - 공구 3개뿐이라 공구 간 일반화는 제한적으로 봐야 한다.

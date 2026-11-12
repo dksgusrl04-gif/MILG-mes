@@ -1,0 +1,22 @@
+scenario: INJ-02
+process: 사출
+title: 사출 품질 등급 4단계 분류 (AIRTLab·iGuzzini)
+question: 이 사이클의 품질 등급은 몇 등급인가?
+data_root: ../..
+
+unit:
+  type: table
+  path: 사출/Polenta 외·AIRTLab, iGuzzini 생산 데이터_data.csv
+  sep: ";"
+
+task: multiclass
+label:
+  source: column
+  column: quality
+
+split:
+  method: random
+  test_size: 0.25
+
+model:
+  candidates: [logistic, random_forest, hgb]

@@ -1,0 +1,57 @@
+scenario: FAS-01
+process: 체결
+title: 나사 체결 곡선 이상 탐지 — 양품 체결만으로 정상 범위 학습 (pyscrew s04, 24종 불량)
+question: 이번 체결이 체결기 판정과 별개로 양품 때의 토크·각도 곡선에서 벗어났는가?
+data_root: ../..
+
+# 판정 단위: 체결 1회 = JSON 파일 1개 (찾기 → 나사 성형 → 예비 체결 → 본 체결, 4단계 토크·각도 곡선)
+unit:
+  type: files
+  root: 체결/체결-20261111T065034Z-1-003/체결/s04_variations-in-assembly-conditions-2/json
+  glob: "*/*.json"
+  path_regex: "^(?P<fault_class>[^/]+)/(?P<file_name>[^/]+\\.json)$"
+  reader: pyscrew_json          # 체결기 JSON → 단계별 곡선 (adapters.py)
+  segment_column: step          # 단계마다 따로 요약
+  channels: [torque, angle, gradient]
+  stats: [mean, std, max, min, last, len]
+  attach:                       # 파일 이름으로 정답·시각·체결기 판정 연결
+    - path: 체결/체결-20261111T065034Z-1-003/체결/s04_variations-in-assembly-conditions-2/labels.csv
+      unit_key: file_name
+      columns: [scenario_condition, workpiece_result, workpiece_date, workpiece_location]
+
+filters:                        # 대조군의 "faulty" 표시는 실제 불량을 넣지 않은 대조 실험이라 평가에서 뺀다
+  - {column: fault_class, not_in: [001_control-group]}
+
+task: anomaly                   # 불량 24종을 미리 다 알 수 없음 → 양품 범위를 벗어나면 경보
+
+features:
+  exclude: [fault_class, file_name, workpiece_result]
+
+split:
+  method: time                  # 앞 절반 기간 양품 체결 = 기준, 뒤 절반 = 평가
+  column: workpiece_date
+  test_size: 0.5
+
+anomaly:
+  context: [workpiece_location] # 좌·우 체결 위치별로 따로 비교
+  min_context_units: 20
+  top_k: 3
+  warn_quantile: 0.95
+  ng_quantile: 0.99
+  label_eval:
+    column: scenario_condition  # 실험에서 일부러 넣은 불량 = 실제 정답
+    positive: [faulty]
+    compare:                    # 체결기 자체 판정과 같은 평가 구간에서 비교
+      name: 체결기 OK/NOK
+      column: workpiece_result
+      positive: [NOK]
+
+audit:
+  watch: [torque, angle]
+
+output:
+  carry_columns: [fault_class, workpiece_date, workpiece_location, scenario_condition, workpiece_result]
+
+notes:
+  - 실험 데이터라 불량 비율(약 50%)이 실제 라인보다 훨씬 높다. 검출률·오경보율 위주로 볼 것.
+  - 불량 종류가 시간 순으로 바뀌며 기록돼, 평가 구간의 불량 종류는 기준 구간과 다르다(처음 보는 불량 탐지에 가깝다).

@@ -1,0 +1,72 @@
+scenario: WLD-03
+process: 용접
+title: 자동차 차체 저항 점용접 불량 분류 — 불량 사례로 학습 (Politecnico, 지도학습 비교용)
+question: 이번 용접점이 불량인가? (과거 불량 사례로 학습)
+data_root: ../..
+unit:
+  type: table
+  path: 용접/_extracted/MILG_03_Spot_Welding/03_RESEARCH_ONLY_CC_BY_NC_4_0_Politecnico/current.csv
+  merge:
+  - path: 용접/_extracted/MILG_03_Spot_Welding/03_RESEARCH_ONLY_CC_BY_NC_4_0_Politecnico/voltage.csv
+    keys:
+    - Car Body
+    - Welding Spot
+    - Date
+  - path: 용접/_extracted/MILG_03_Spot_Welding/03_RESEARCH_ONLY_CC_BY_NC_4_0_Politecnico/force.csv
+    keys:
+    - Car Body
+    - Welding Spot
+    - Date
+  - path: 용접/_extracted/MILG_03_Spot_Welding/03_RESEARCH_ONLY_CC_BY_NC_4_0_Politecnico/labels.csv
+    keys:
+    - Car Body
+    - Welding Spot
+    - Date
+  wide_series:
+    groups:
+      Current: Current T-*
+      Voltage: Voltage T-*
+      Force: Force T-*
+    stats:
+    - mean
+    - std
+    - max
+    - min
+    - rms
+    - auc
+    segments: 3
+    trim_zeros: true
+task: binary
+features:
+  exclude:
+  - Car Body
+  - Fault
+split:
+  method: time
+  column: Date
+  test_size: 0.33
+output:
+  carry_columns:
+  - Car Body
+  - Welding Spot
+  - Date
+  - Fault
+notes:
+- 라이선스 CC BY-NC 4.0 — 비상업 연구·캡스톤용. MILG 상용 학습·배포에는 쓰지 않는다.
+- 파형은 원본에서 이미 0~1로 정규화돼 있다.
+- WLD-01(양품 기준 이상 탐지)이 AUC 0.55로 실패해, 불량 사례로 학습하는 방식과 비교한다.
+- 용접 위치 번호(Welding Spot)는 특성으로 남겼다. 불량이 특정 위치(84·73번)에 몰려 있어 위치 자체가 단서가 된다.
+label:
+  source: column
+  column: Fault
+  positive:
+  - 1
+model:
+  candidates:
+  - logistic
+  - random_forest
+  - hgb
+  - milg
+decision:
+  type: threshold_for_recall
+  target_recall: 0.7
