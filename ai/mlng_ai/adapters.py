@@ -8,9 +8,9 @@ import pandas as pd
 
 RECIPES={'screw_stage_torque_angle_v1','screw_stage_torque_angle_v2','aursad_post_operation_progress_shapes_v1',
          'clamping_torque_v1','mct_sensor_columns_v1','causalman_scalar_v1',
-         'injection_kamp_summary_v1','heat_kamp_summary_v1','scatim_waveform_summary_v1','spot_weld_aisi1010_v1','press_pump_window_v1','heat_tempering_hrc_v1','press_p2s_force_v1','spot_weld_rsw_summary_v1','ddacs_parameters_v1','extra_numeric_v1','widget_numeric_v1'}
+         'injection_kamp_summary_v1','heat_kamp_summary_v1','scatim_waveform_summary_v1','spot_weld_aisi1010_v1','press_pump_window_v1','heat_tempering_hrc_v1','press_p2s_force_v1','spot_weld_rsw_summary_v1','ddacs_parameters_v1','extra_numeric_v1','widget_numeric_v1','scenario_numeric_v1'}
 
-REGRESSION_TARGETS = {'preload_kN','batch_defect_rate','scatim_part_weight','spot_weld_nugget_diameter_mm','press_pump_anomaly_score','final_hardness_hrc','ddacs_sim_min_thickness_mm','gmaw_penetration_mm','gmaw_height_mm','gmaw_width_mm','tube_collapse_mm'}
+REGRESSION_TARGETS = {'preload_kN','batch_defect_rate','scatim_part_weight','spot_weld_nugget_diameter_mm','press_pump_anomaly_score','final_hardness_hrc','ddacs_sim_min_thickness_mm','gmaw_penetration_mm','gmaw_height_mm','gmaw_width_mm','tube_collapse_mm','scenario_estimate'}
 
 def recipe_of(artifact):
     recipe=artifact.get('feature_recipe')

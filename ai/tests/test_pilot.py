@@ -12,6 +12,7 @@ from mlng_ai.pilot import PilotEngine, press_features, write_json
 def installed(tmp_path):
     release = tmp_path/'release'
     write_json(release/'routes.json', {})
+    write_json(release/'examples'/'pressfit.json',payload())
     write_json(release/'release.json', {'id':'test-release', 'processes':{'pressfit':{}},
                'routes_sha256':hashlib.sha256((release/'routes.json').read_bytes()).hexdigest()})
     pointer = {'release':str(release),'sha256':hashlib.sha256((release/'release.json').read_bytes()).hexdigest()}
@@ -156,6 +157,13 @@ def test_field_quality_training_promotes_only_inspected_local_model(installed):
     result = a.predict('pressfit',payload()['rows'],payload()['context'])
     assert result['mode'] == 'tenant_quality_candidate'
     assert b.predict('pressfit',payload()['rows'],payload()['context'])['mode'] == 'needs_normal_reference'
+    with pytest.raises(ValueError, match='fresh chronological'):
+        a.train_field('pressfit',payload()['context'])
+    for i in range(200,240):
+        p=payload(i);p['lot_id']='Q'+str(i//20)
+        failed=i%20>=10
+        if failed:p['rows'][0]['force']=[v*10 for v in p['rows'][0]['force']]
+        a.submit(p);a.feedback(str(i),'fail' if failed else 'pass','inspector','new-inspection-'+str(i))
     repeated = a.train_field('pressfit',payload()['context'])
     assert repeated['installed'] is True
     assert repeated['previous_comparison']['test']['nonregression'] is True
@@ -205,3 +213,14 @@ def test_review_is_separate_from_inspection_labels(installed):
     assert a.status()['counts']['feedback']==0
     with pytest.raises(ValueError):b.review('0','hold','quality-owner')
     with pytest.raises(ValueError):a.review('0','pass','quality-owner')
+
+
+def test_review_history_is_tenant_local_and_bounded(installed):
+    a,b=installed;a.submit(payload());a.review('0','hold','operator','Check measured cycle')
+    rows=a.history()['reviews'];assert len(rows)==1
+    assert rows[0]['event_id']=='0' and rows[0]['lot_id']==payload()['lot_id']
+    assert rows[0]['actor']=='operator' and rows[0]['action']=='hold'
+    assert 'request' not in rows[0] and 'result' not in rows[0]
+    assert b.history()['reviews']==[]
+    for value in (0,201,True,'50'):
+        with pytest.raises(ValueError,match='integer'):a.history(value)

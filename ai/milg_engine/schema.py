@@ -91,7 +91,7 @@ MODEL_NAMES = ["baseline", "logistic", "random_forest", "hgb", "ridge", "milg"] 
 MODEL = {"candidates": F(LIST, items=STR, enum_items=MODEL_NAMES), "search": F({"n_iter": F(INT, min=1)})}
 
 DECISION = {"type": F(STR, enum=["threshold_for_recall", "fixed", "limit"]), "target_recall": F(NUM, gt0=True, max=1),
-            "threshold": F(NUM), "warn_ratio": F(NUM, gt0=True, max=1), "limit": F(NUM), "action": F(STR, enum=["stop", "ng"])}
+            "threshold": F(NUM), "max_false_positive_rate": F(NUM, min=0, max=1), "warn_ratio": F(NUM, gt0=True, max=1), "limit": F(NUM), "action": F(STR, enum=["stop", "ng"])}
 
 SENS_TEST = {"name": F(STR, True), "columns": F(LIST, True, items=STR), "cell_channels": F(LIST, items=STR),
              "factors": F(LIST, items=NUM)}
@@ -102,6 +102,7 @@ ANOMALY = {
     "calibration": F(STR, enum=["empirical", "none"]), "combine": F(STR, enum=["top_k", "group"]),
     "groups": F(DICT, open=True), "pool_shrink": F(NUM, min=0), "rel_floor": F(NUM, min=0), "clip_z": F(NUM, gt0=True),
     "trend_by": F("str|list"), "normal_only": F(BOOL),
+    "candidates": F(LIST, items=STR, enum_items=["context", "milg"]),      # 점수 후보: 첫 번째가 판정, 나머지는 비교 (milg = MILG 엔진 정상 기준 모드)
     "cell_baseline": F({"channels": F(LIST, True, items=STR), "min_train": F(INT, min=1), "context": F(LIST, items=STR),
                         "tail_quantile": F(NUM, gt0=True, max=1)}),
     "sensitivity": F(LIST, items=SENS_TEST),

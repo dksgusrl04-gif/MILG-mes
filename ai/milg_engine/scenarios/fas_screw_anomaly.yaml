@@ -33,6 +33,7 @@ split:
   test_size: 0.5
 
 anomaly:
+  candidates: [context, milg]   # 점수 후보 — 첫 번째가 판정, milg(MILG 엔진 정상 기준 모드)는 나란히 비교
   context: [workpiece_location] # 좌·우 체결 위치별로 따로 비교
   min_context_units: 20
   top_k: 3

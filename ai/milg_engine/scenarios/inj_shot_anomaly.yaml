@@ -34,6 +34,7 @@ split:
   test_groups: ["2020-10-16", "2020-10-27", "2020-11-03"]
 
 anomaly:
+  candidates: [context, milg]   # 점수 후보 — 첫 번째가 판정, milg(MILG 엔진 정상 기준 모드)는 나란히 비교
   top_k: 3
   warn_quantile: 0.95
   ng_quantile: 0.99

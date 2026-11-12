@@ -26,6 +26,9 @@ class Router:
         if not re.fullmatch(r'[a-z][a-z0-9_]{1,31}',process) or not approved_by.strip():
             raise ValueError('Valid process and approver required')
         source = Path(model_path)
+        if kind=="scenario":
+            from .scenario_runtime import register
+            return register(self,process,source,approved_by)
         if kind in ('specialist','joint','joint_v2'):
             from .adapters import register_external
             return register_external(self,process,source,kind,approved_by)
@@ -81,6 +84,9 @@ class Router:
     def predict(self, process, df):
         route = self.routes().get(process)
         if route is None: return None
+        if route['kind']=='scenario':
+            from .scenario_runtime import predict
+            return predict(self,process,route,df)
         if route['kind'] in ('specialist','joint','joint_v2'):
             from .adapters import predict_external
             return predict_external(self,process,route,df)
@@ -122,7 +128,7 @@ class Router:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state',required=True); parser.add_argument('--process',required=True)
-    parser.add_argument('--model',required=True); parser.add_argument('--kind',choices=['mct','causalman','specialist','joint','joint_v2'],required=True)
+    parser.add_argument('--model',required=True); parser.add_argument('--kind',choices=['mct','causalman','specialist','joint','joint_v2','scenario'],required=True)
     parser.add_argument('--preprocessing'); parser.add_argument('--approved-by',required=True)
     a = parser.parse_args()
     print(json.dumps(Router(a.state).register(a.process,a.model,a.kind,a.approved_by,a.preprocessing),indent=2))

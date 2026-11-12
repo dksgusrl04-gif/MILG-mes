@@ -1,6 +1,6 @@
 """Local pilot runtime: versioned public models and tenant-local press-fit references.
 
-No machine control or automatic learning. Only trusted local release artifacts load.
+No machine control. Optional tenant-local learning uses inspected, closed LOTs.
 """
 import argparse
 import hashlib
@@ -82,6 +82,7 @@ class PilotEngine:
         if hashlib.sha256(raw).hexdigest() != pointer['sha256']:
             raise ValueError('Pilot release manifest checksum mismatch')
         self.manifest = json.loads(raw)
+        self.release_sha256 = hashlib.sha256(raw).hexdigest()
         if hashlib.sha256((self.release/'routes.json').read_bytes()).hexdigest() != self.manifest['routes_sha256']:
             raise ValueError('Pilot route registry checksum mismatch')
         self.router = Router(self.release)
@@ -101,6 +102,8 @@ class PilotEngine:
                 CREATE TABLE IF NOT EXISTS field_models(id TEXT PRIMARY KEY, created TEXT NOT NULL,
                   scope TEXT NOT NULL, process TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL);
             ''')
+            from .learning import initialize
+            initialize(db)
 
     @contextmanager
     def db(self):
@@ -119,6 +122,36 @@ class PilotEngine:
         return {'release': self.manifest['id'], 'mode': 'pilot',
                 'processes': self.manifest['processes'], 'counts': counts,
                 'field_validated': False, 'state': str(self.state)}
+
+    def example(self, process):
+        # Registry lookup prevents arbitrary file/path access through this API.
+        if process not in self.manifest['processes']:
+            raise ValueError('Unsupported pilot process')
+        import copy
+        sample = json.loads((self.release/'examples'/(process+'.json')).read_text(encoding='utf-8'))
+        sample = copy.deepcopy(sample)
+        sample.update(demo=True, cycle_id='demo-'+uuid.uuid4().hex[:16])
+        return sample
+
+    def contract(self, process):
+        if process not in self.manifest['processes']:
+            raise ValueError('Unsupported pilot process')
+        route = self.router.routes().get(process, {})
+        capability = self.manifest['processes'][process]
+        return {'process':process,'release':self.manifest['id'],
+                'input_contract':route.get('input_contract','pressfit_force_displacement_N_mm_v1'),
+                'required_features':route.get('feature_columns',[]),
+                'input_units':capability.get('input_units',{}),
+                'capability':capability,'field_validated':False}
+
+    def history(self, limit=50):
+        if isinstance(limit,bool) or not isinstance(limit,int) or not 1 <= limit <= 200:
+            raise ValueError('History limit must be an integer in 1..200')
+        with self.db() as db:
+            rows=db.execute('''SELECT r.id,r.created,r.event,e.lot,e.process,r.actor,r.action,r.note
+                FROM reviews r JOIN events e ON e.id=r.event ORDER BY r.id DESC LIMIT ?''',(limit,)).fetchall()
+        keys=('review_id','created','event_id','lot_id','process','actor','action','note')
+        return {'reviews':[dict(zip(keys,row)) for row in rows], 'training_performed':False}
 
     def predict(self, process, rows, context=None):
         if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
@@ -192,7 +225,7 @@ class PilotEngine:
             frame = pd.DataFrame(rows)
             route = self.router.routes()[process]
             from .adapters import input_features
-            features = input_features(route['input_contract'], frame, route['feature_columns'])
+            features = frame if route['kind']=='scenario' else input_features(route['input_contract'], frame, route['feature_columns'])
             # Missing whole channels must not silently become a confident prediction.
             if route['input_contract'] == 'mct_sensor_columns_v1' and not np.isfinite(features.to_numpy()).all():
                 raise ValueError('MCT pilot requires finite values for every contracted sensor feature')
@@ -200,11 +233,11 @@ class PilotEngine:
             capability = self.manifest['processes'][process]
             from .adapters import REGRESSION_TARGETS
             continuous = result.get('target') in (REGRESSION_TARGETS - {'preload_kN'})
-            result['decision_status'] = ('benchmark_estimate' if continuous else
+            result['decision_status'] = result.get('decision_status') or ('benchmark_estimate' if continuous else
                 'experimental_alert' if capability.get('alert_enabled', False) else 'needs_threshold_validation')
             for row in result['rows']:
                 row['quality_prediction'] = None
-                row['benchmark_alert'] = row.get('alert')
+                row['benchmark_alert'] = row.get('benchmark_alert',row.get('alert'))
                 if not capability.get('alert_enabled', False):
                     row['alert'] = None
             result['probability_note'] = ('Public benchmark estimate in source target units' if continuous else
@@ -226,14 +259,18 @@ class PilotEngine:
             rows = [mct_waveform(r) for r in rows]
         from .adapters import input_features
         route = self.router.routes()[process]
+        if route['kind']=='scenario':
+            import joblib
+            from .scenario_runtime import frame_for
+            return frame_for(joblib.load(self.release/route['model']),pd.DataFrame(rows))[0]
         return input_features(route['input_contract'], pd.DataFrame(rows), route['feature_columns'])
 
     def _field_prediction(self, process, rows, context, result):
         import joblib
         from .adapters import standardize, _input_evidence
         with self.db() as db:
-            entry = db.execute('SELECT id,path,sha256 FROM field_models WHERE scope=? AND process=? ORDER BY created DESC LIMIT 1',
-                               (context_key(context), process)).fetchone()
+            from .learning import active_entry
+            entry = active_entry(db, context_key(context), process)
             latest = dict(db.execute('SELECT event,outcome FROM feedback WHERE id IN (SELECT MAX(id) FROM feedback GROUP BY event)').fetchall()) if entry else {}
         if not entry:
             return
@@ -247,6 +284,13 @@ class PilotEngine:
                 row['alert'] = None
             return
         features = self._feature_frame(process, rows)
+        if not np.isfinite(features.to_numpy(float)).all():
+            raise ValueError('Field inference requires every contracted sensor value to be finite')
+        if (artifact.get('release', self.manifest['id']) != self.manifest['id'] or
+            artifact.get('release_sha256',self.release_sha256)!=self.release_sha256):
+            result['field_model_status'] = 'release_changed_revalidation_required'
+            for row in result['rows']: row['alert'] = None
+            return
         if list(features) != artifact['preprocessing']['columns']:
             raise ValueError('Field feature contract changed; retraining required')
         X = standardize(features, artifact['preprocessing'])
@@ -261,6 +305,10 @@ class PilotEngine:
                       probability_note='Classifier score, not a calibrated probability or automatic acceptance decision')
 
     def train_field(self, process, context):
+        from .learning import LearningManager
+        return LearningManager(self).train_manual(process, context)
+
+    def _train_field_candidate(self, process, context, entries=None, split_lots=None, gates=None):
         """Learn an inspected, tenant-local model; promote only after preset checks."""
         import joblib
         from sklearn.ensemble import HistGradientBoostingClassifier
@@ -271,8 +319,9 @@ class PilotEngine:
         scope = context_key(context)
         if process not in self.manifest['processes']:
             raise ValueError('Unknown process')
-        with self.db() as db:
-            entries = db.execute('''SELECT e.id,e.lot,e.request,f.outcome FROM events e JOIN feedback f ON f.event=e.id
+        if entries is None:
+            with self.db() as db:
+                entries = db.execute('''SELECT e.id,e.lot,e.request,f.outcome FROM events e JOIN feedback f ON f.event=e.id
                 WHERE e.scope=? AND e.process=? AND f.outcome IN ('pass','fail')
                 AND f.id=(SELECT MAX(id) FROM feedback WHERE event=e.id) ORDER BY e.created,e.id''', (scope,process)).fetchall()
         entries = [e for e in entries if not json.loads(e[2]).get('demo',False)]
@@ -280,7 +329,9 @@ class PilotEngine:
         if len(entries) < 100 or len(lots) < 5:
             raise ValueError('Field quality training needs >=100 inspected cycles across >=5 lots in the same context')
         a,b = max(1,int(.6*len(lots))), max(2,int(.8*len(lots)))
-        sets = [set(lots[:a]),set(lots[a:b]),set(lots[b:])]
+        sets = [set(lots[:a]),set(lots[a:b]),set(lots[b:])] if split_lots is None else [set(s) for s in split_lots]
+        if any(sets[i] & sets[j] for i,j in ((0,1),(0,2),(1,2))) or set.union(*sets) != set(lots):
+            raise ValueError('Invalid disjoint LOT split')
         masks = [np.array([e[1] in s for e in entries]) for s in sets]
         y = np.array([int(e[3]=='fail') for e in entries])
         for mask,minimum in zip(masks,(10,5,5)):
@@ -288,29 +339,36 @@ class PilotEngine:
                 raise ValueError('Each split needs both outcomes: train >=10/class, validation and test >=5/class')
         rows = [json.loads(e[2])['rows'][0] for e in entries]
         frame = self._feature_frame(process, rows)
+        if not np.isfinite(frame.to_numpy(float)).all():
+            raise ValueError('Field training requires finite contracted features')
         tr,val,test = masks
         transform = TrainTransform().fit(frame.loc[tr])
         X = [transform.transform(frame.loc[m]) for m in masks]
-        models = {'linear':LogisticRegression(max_iter=2000,random_state=42),
+        from milg_engine.milg_core import MilgEngineClassifier
+        models = {'milg':MilgEngineClassifier(), 'linear':LogisticRegression(max_iter=2000,random_state=42),
                   'nonlinear':HistGradientBoostingClassifier(max_iter=120,max_leaf_nodes=7,min_samples_leaf=10,
                                 l2_regularization=2,early_stopping=False,random_state=42)}
         validation = {}
+        gates = gates or {'min_auc':.65,'min_recall':.5,'max_fpr':.1}
         with threadpool_limits(limits=4):
             for key, model in models.items():
                 model.fit(X[0],y[tr])
                 score = model.predict_proba(X[1])[:,1]
-                threshold = threshold_on_validation(y[val],score,.05)
+                threshold = threshold_on_validation(y[val],score,min(.05,gates['max_fpr']))
                 validation[key] = metrics(y[val],score,threshold)
-        selected = max(validation,key=lambda k:(validation[k]['recall'],validation[k]['auc']))
+        eligible = [k for k,m in validation.items() if m['auc']>=gates['min_auc'] and
+                    m['recall']>=gates['min_recall'] and m['false_positive_rate']<=gates['max_fpr']]
+        selected = max(eligible or validation,key=lambda k:(validation[k]['recall'],validation[k]['auc']))
         threshold = validation[selected]['threshold']
         evaluation = metrics(y[test],models[selected].predict_proba(X[2])[:,1],threshold)
         # Predeclared pilot screening gates; not a customer acceptance guarantee.
-        passed = all(m['auc'] >= .65 and m['recall'] >= .5 and m['false_positive_rate'] <= .1
+        passed = all(m['auc'] >= gates['min_auc'] and m['recall'] >= gates['min_recall'] and m['false_positive_rate'] <= gates['max_fpr']
                      for m in (validation[selected],evaluation))
         previous_comparison = None
         with self.db() as db:
-            previous = db.execute('SELECT path,sha256 FROM field_models WHERE scope=? AND process=? ORDER BY created DESC LIMIT 1',
-                                  (scope,process)).fetchone()
+            from .learning import active_entry
+            active = active_entry(db, scope, process)
+            previous = (active[1],active[2]) if active else None
         if previous:
             from .adapters import standardize
             previous_path = self.state/previous[0]
@@ -332,21 +390,17 @@ class PilotEngine:
         folder = self.state/'field-candidates'/identity
         folder.mkdir(parents=True)
         report = {'id':identity,'process':process,'context':context,'selected':selected,
-                  'validation':validation,'test':evaluation,'installed':passed,
+                  'validation':validation,'test':evaluation,'installed':False,'gate_passed':bool(passed),
                   'previous_comparison':previous_comparison,
                   'split_lots':[sorted(s) for s in sets], 'splits':{s:[e[0] for e,m in zip(entries,mask) if m]
                                   for s,mask in zip(('train','validation','test'), masks)},
-                  'gates':{'min_auc':.65,'min_recall':.5,'max_fpr':.1},
+                  'gates':gates,
                   'limitations':'Historical LOT holdout; repeated tuning requires a fresh external test set'}
         artifact = {'model':models[selected],'preprocessing':transform.export(),'threshold':threshold,
-                    'inspection_outcomes':{e[0]:e[3] for e in entries},'process':process,'context':context}
+                    'inspection_outcomes':{e[0]:e[3] for e in entries},'process':process,'context':context,
+                    'release':self.manifest['id'],'release_sha256':self.release_sha256}
         joblib.dump(artifact,folder/'model.joblib')
         write_json(folder/'report.json',report)
-        if passed:
-            path=folder/'model.joblib'
-            with self.db() as db:
-                db.execute('INSERT INTO field_models VALUES(?,?,?,?,?,?)',
-                    (identity,now(),scope,process,path.relative_to(self.state).as_posix(),hashlib.sha256(path.read_bytes()).hexdigest()))
         return report
 
     def submit(self, payload):
@@ -369,9 +423,20 @@ class PilotEngine:
                 if existing[0] != request_hash:
                     raise ValueError('cycle_id already exists with different input')
                 return json.loads(existing[1])
+            if not isinstance(payload.get('demo', False), bool):
+                raise ValueError('demo must be a boolean')
+            if payload.get('observed_at') is not None:
+                from .learning import parse_time
+                parse_time(payload['observed_at'])
+            if db.execute('SELECT 1 FROM learning_lots WHERE scope=? AND process=? AND lot=?',
+                          (scope,payload.get('process'),payload['lot_id'])).fetchone():
+                raise ValueError('LOT is closed; use a new LOT identifier for later operations')
             result = self.predict(payload.get('process', 'auto'), payload['rows'], payload['context'])
             if result['mode'] == 'needs_confirmation':
                 return result
+            if db.execute('SELECT 1 FROM learning_lots WHERE scope=? AND process=? AND lot=?',
+                          (scope,result['process'],payload['lot_id'])).fetchone():
+                raise ValueError('LOT is closed')
             result.update(event_id=event_id, created=now())
             db.execute('INSERT INTO events VALUES(?,?,?,?,?,?,?,?)',
                        (event_id, request_hash, result['created'], result['process'], scope, payload['lot_id'],
@@ -390,7 +455,7 @@ class PilotEngine:
                            (event_id,now(),actor,action,note))
         return {'review_id':cur.lastrowid,'event_id':event_id,'action':action,'training_performed':False}
 
-    def feedback(self, event_id, outcome, actor, evidence, note=''):
+    def feedback(self, event_id, outcome, actor, evidence, note='', source_id=None):
         if outcome not in ('pass', 'fail', 'unknown') or not isinstance(actor, str) or not actor.strip():
             raise ValueError('outcome pass/fail/unknown and actor required')
         if not isinstance(evidence, str) or (outcome != 'unknown' and not evidence.strip()):
@@ -398,16 +463,27 @@ class PilotEngine:
         if len(actor) > 100 or len(evidence) > 1000 or not isinstance(note, str) or len(note) > 2000:
             raise ValueError('Feedback text too long')
         with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if source_id is not None:
+                if not isinstance(source_id,str) or not 1<=len(source_id)<=200: raise ValueError('Invalid feedback source_id')
+                from .learning import fingerprint
+                checksum=fingerprint([event_id,outcome,actor,evidence,note])
+                previous=db.execute('SELECT hash,feedback_id FROM feedback_receipts WHERE source_id=?',(source_id,)).fetchone()
+                if previous:
+                    if previous[0]!=checksum: raise ValueError('Inspection source_id already has different content; use a new revision ID')
+                    return {'feedback_id':previous[1],'event_id':event_id,'training_performed':False,'duplicate':True}
             if not db.execute('SELECT 1 FROM events WHERE id=?', (event_id,)).fetchone():
                 raise ValueError('Unknown cycle_id in this tenant')
             cur = db.execute('INSERT INTO feedback(event,created,actor,outcome,evidence,note) VALUES(?,?,?,?,?,?)',
                             (event_id, now(), actor, outcome, evidence, note))
+            if source_id is not None:db.execute('INSERT INTO feedback_receipts VALUES(?,?,?)',(source_id,checksum,cur.lastrowid))
         return {'feedback_id': cur.lastrowid, 'event_id': event_id, 'training_performed': False}
 
-    def calibrate(self, context):
+    def calibrate(self, context, entries=None):
         scope = context_key(context)
-        with self.db() as db:
-            entries = db.execute('''SELECT e.id,e.lot,e.request FROM events e JOIN feedback f ON f.event=e.id
+        if entries is None:
+            with self.db() as db:
+                entries = db.execute('''SELECT e.id,e.lot,e.request FROM events e JOIN feedback f ON f.event=e.id
                 WHERE e.scope=? AND e.process='pressfit' AND f.outcome='pass'
                 AND f.id=(SELECT MAX(g.id) FROM feedback g WHERE g.event=e.id) ORDER BY e.created,e.id''', (scope,)).fetchall()
         entries = [e for e in entries if not json.loads(e[2]).get('demo', False)]
@@ -431,19 +507,33 @@ class PilotEngine:
                     'sensitivity': None, 'independent_test': False, 'context': context}
         identity = uuid.uuid4().hex
         with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            latest = dict(db.execute('SELECT event,outcome FROM feedback WHERE id IN (SELECT MAX(id) FROM feedback GROUP BY event)'))
+            if any(latest.get(e[0]) != 'pass' for e in entries):
+                raise ValueError('Inspection changed during normal-reference calibration')
             db.execute('INSERT INTO baselines VALUES(?,?,?,?)', (identity, now(), scope, json.dumps(artifact)))
         return {'baseline_id': identity, **artifact}
 
 
-def serve(state, port, allowed_origins=()):
+def serve(state, port, allowed_origins=(), auto_learn=False):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import urlsplit, unquote
+    import mimetypes
+    import re
     engine = PilotEngine(state)
     token_path = Path(state)/'pilot-token.txt'
     if not token_path.exists():
         token_path.write_text(secrets.token_urlsafe(32), encoding='utf-8')
     token = token_path.read_text(encoding='utf-8').strip()
+    admin_path = Path(state)/'pilot-admin-token.txt'
+    if not admin_path.exists(): admin_path.write_text(secrets.token_urlsafe(32), encoding='utf-8')
+    admin_token = admin_path.read_text(encoding='utf-8').strip()
+    from .learning import LearningManager, Busy
+    learning = LearningManager(engine)
     page = (Path(__file__).parent/'pilot_ui.html').read_bytes()
+    demo_page = (Path(__file__).parent/'demo_ui.html').read_bytes()
     widget = (Path(__file__).resolve().parents[2]/'web'/'milg-widget.js').read_bytes()
+    web_root = Path(__file__).resolve().parents[2]/'web'
 
     class Handler(BaseHTTPRequestHandler):
         def respond(self, code, data, content_type='application/json; charset=utf-8'):
@@ -472,16 +562,50 @@ def serve(state, port, allowed_origins=()):
             self.end_headers()
 
         def do_GET(self):
+            path = unquote(urlsplit(self.path).path)
+            if path == '/mes':
+                self.send_response(302); self.send_header('Location','/mes/'); self.end_headers(); return
+            if path.startswith('/mes/'):
+                # Only public MES assets. Never expose the repo root, state or tokens.
+                relative = path[len('/mes/'):] or 'index.html'
+                try:
+                    asset = (web_root/relative).resolve()
+                    if not asset.is_relative_to(web_root.resolve()) or not asset.is_file():
+                        return self.respond(404,{'error':'Not found'})
+                    if asset.suffix.lower() not in ('.html','.js','.css','.json','.svg','.png','.ico','.woff2'):
+                        return self.respond(404,{'error':'Not found'})
+                    data = asset.read_bytes()
+                    if relative == 'index.html':
+                        text=data.decode('utf-8')
+                        text=re.sub(r'(<script src="js/config\.js[^\"]*"></script>)',
+                                    r'\1<script src="/mes-local.js"></script>',text)
+                        text=re.sub(r'<script src="js/mod_widget\.js[^\"]*"></script>','',text)
+                        text=text.replace('<script src="js/boot.js',
+                            '<script src="/milg-widget.js"></script><script src="js/mod_engine_widget.js"></script>\n<script src="js/boot.js')
+                        data=text.encode('utf-8')
+                    return self.respond(200,data,(mimetypes.guess_type(asset.name)[0] or 'application/octet-stream')+'; charset=utf-8')
+                except (OSError,ValueError):
+                    return self.respond(404,{'error':'Not found'})
+            if path == '/mes-local.js':
+                # Local replay only. No external data, write APIs or model URL guesses.
+                config=b"Object.assign(window.MLNG_CONFIG,{SUPABASE_URL:'',SUPABASE_ANON_KEY:'',ASK_URL:'off',AI_URL:'',LOCAL_ENGINE_MODE:true,START_VIEW:'engine_cycles'});document.documentElement.setAttribute('data-theme','light');"
+                return self.respond(200,config,'text/javascript; charset=utf-8')
             if self.path == '/milg-widget.js':
                 return self.respond(200,widget,'text/javascript; charset=utf-8')
             if self.path == '/':
                 return self.respond(200, page, 'text/html; charset=utf-8')
+            if self.path == '/demo':
+                return self.respond(200, demo_page, 'text/html; charset=utf-8')
+            if self.path == '/operations':
+                return self.respond(200,(Path(__file__).parent/'operations_ui.html').read_bytes(),'text/html; charset=utf-8')
             return self.respond(404, {'error': 'Not found'})
 
         def do_POST(self):
             if self.headers.get('Origin') and self.headers['Origin'] not in allowed_origins and self.headers['Origin'] not in ('http://127.0.0.1:'+str(port),'http://localhost:'+str(port)):
                 return self.respond(403,{'error':'Origin is not allowed'})
-            if not secrets.compare_digest(self.headers.get('Authorization',''), 'Bearer '+token):
+            admin = self.path in ('/api/learning/configure','/api/learning/rollback')
+            expected_token = admin_token if admin else token
+            if not secrets.compare_digest(self.headers.get('Authorization',''), 'Bearer '+expected_token):
                 return self.respond(401, {'error': 'Pilot token required'})
             try:
                 size = int(self.headers.get('Content-Length','0'))
@@ -492,17 +616,33 @@ def serve(state, port, allowed_origins=()):
                     raise ValueError('JSON object required')
                 if self.path == '/api/status':
                     result = engine.status()
+                elif self.path == '/api/example':
+                    result = engine.example(body['process'])
+                elif self.path == '/api/contract':
+                    result = engine.contract(body['process'])
+                elif self.path == '/api/history':
+                    result = engine.history(body.get('limit',50))
                 elif self.path == '/api/cycle':
                     result = engine.submit(body)
                 elif self.path == '/api/review':
                     result = engine.review(**body)
                 elif self.path == '/api/feedback':
                     result = engine.feedback(**body)
+                elif self.path == '/api/lot-close':
+                    result = learning.close_lot(**body)
+                elif self.path == '/api/learning/status':
+                    result = learning.status()
+                elif self.path == '/api/learning/configure':
+                    result = learning.configure(**body)
+                elif self.path == '/api/learning/rollback':
+                    result = learning.rollback(**body)
                 elif self.path == '/api/calibrate':
                     result = engine.calibrate(body['context'])
                 else:
                     return self.respond(404, {'error': 'Not found'})
                 self.respond(200, result)
+            except Busy as exc:
+                self.respond(409, {'error':str(exc)})
             except (ValueError, TypeError, KeyError) as exc:
                 self.respond(400, {'error': str(exc)})
             except Exception:
@@ -512,8 +652,19 @@ def serve(state, port, allowed_origins=()):
             pass
 
     print(f'Pilot listening: http://127.0.0.1:{port}', flush=True)
+    print(f'MES presentation: http://127.0.0.1:{port}/mes/', flush=True)
     print('Token file:', token_path, flush=True)
-    ThreadingHTTPServer(('127.0.0.1', port), Handler).serve_forever()
+    server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
+    supervisor = None
+    if auto_learn:
+        from .learning_worker import Supervisor
+        supervisor = Supervisor(state); supervisor.start()
+        print('Automatic learning supervisor enabled; configured scopes only',flush=True)
+    try: server.serve_forever()
+    except KeyboardInterrupt: pass
+    finally:
+        server.server_close()
+        if supervisor: supervisor.close()
 
 
 def main():
@@ -524,9 +675,10 @@ def main():
     parser.add_argument('--out')
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--allow-origin',action='append',default=[])
+    parser.add_argument('--auto-learn',action='store_true')
     args = parser.parse_args()
     if args.command == 'serve':
-        return serve(args.state, args.port, args.allow_origin)
+        return serve(args.state, args.port, args.allow_origin, args.auto_learn)
     if args.command == 'rollback':
         state = Path(args.state)
         previous = json.loads((state/'pilot-previous.json').read_text(encoding='utf-8'))

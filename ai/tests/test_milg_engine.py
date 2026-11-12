@@ -70,3 +70,51 @@ def test_milg_rejected_for_non_binary(tmp_path):
     (tmp_path / 's.yaml').write_text('scenario: T-02\nprocess: 시험\ntitle: t\nquestion: q\nunit: {type: table, path: a.csv}\ntask: regression\nlabel: {source: column, column: y}\nmodel: {candidates: [ridge, milg]}\n', encoding='utf-8')
     with pytest.raises(engine.ConfigError):
         engine.load_scenario(str(tmp_path / 's.yaml'))
+
+
+def _anom(tmp_path, cands):
+    rng = np.random.default_rng(1)
+    n = 900
+    d = pd.DataFrame({'u': np.arange(n), 't': pd.date_range('2026-01-01', periods=n, freq='min').astype(str), 'tool': np.tile(['A', 'B', 'C'], n // 3)})
+    lvl = d.tool.map({'A': 10.0, 'B': 30.0, 'C': 60.0}).to_numpy()
+    for c in ['i1', 'i2', 'i3', 'v1', 'v2', 'v3']:
+        d[c] = lvl + rng.normal(0, 1, n)
+    bad = np.zeros(n, bool); bad[rng.choice(np.arange(650, n), 25, replace=False)] = True
+    d.loc[bad, ['i1', 'i2', 'i3', 'v1', 'v2', 'v3']] += 2.2          # 여러 특성이 조금씩 함께 벗어남
+    d['label'] = np.where(bad, 'NG', 'OK')
+    d.to_csv(tmp_path / 'u.csv', index=False)
+    (tmp_path / 'a.yaml').write_text(f'''
+scenario: A-01
+process: 시험
+title: 이상 탐지 통합 시험
+question: 평소와 다른가?
+data_root: .
+unit: {{type: table, path: u.csv, id: u}}
+task: anomaly
+features: {{exclude: [u, t, tool, label]}}
+split: {{method: time, column: t, test_size: 0.33}}
+anomaly:
+  candidates: {cands}
+  context: [tool]
+  label_eval: {{column: label, positive: [NG]}}
+  sensitivity:
+    - {{name: 전류, columns: ["i*"], factors: [1.2]}}
+output: {{carry_columns: [tool]}}
+''', encoding='utf-8')
+    return engine.run(str(tmp_path / 'a.yaml'), str(tmp_path / 'out'), 1e9), pd.read_csv(tmp_path / 'out' / 'A-01' / 'predictions.csv')
+
+
+def test_anomaly_compares_milg_normal_mode_side_by_side(tmp_path):
+    r, out = _anom(tmp_path, '[context, milg]')
+    c = r['candidates']
+    assert list(c) == ['context', 'milg'] and c['context']['primary'] and r['best_model'].startswith('context')
+    assert c['milg']['label_eval']['auc'] > 0.9 and c['milg']['label_eval']['test_defects'] == 25
+    assert c['milg']['sensitivity'] and {'score_milg', 'decision_milg'} <= set(out.columns)
+    assert abs(c['milg']['baseline']['ng_rate'] - 0.01) < 0.01          # 같은 분위수 임계값
+
+
+def test_anomaly_milg_as_primary_drives_decision(tmp_path):
+    r, out = _anom(tmp_path, '[milg, context]')
+    assert r['best_model'] == 'milg_normal' and set(out.model) == {'milg_normal'} and 'score_context' in out.columns
+    assert r['label_eval']['auc'] == r['candidates']['milg']['label_eval']['auc']
+    assert out.loc[out.decision == 'NG', 'reason'].str.contains('가장 크게 벗어남').all()

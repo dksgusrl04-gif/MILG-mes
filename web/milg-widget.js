@@ -34,6 +34,7 @@
     }
     clear() {
       this.result=null;this.payload=null;this.$('#details').replaceChildren();this.$('#evidence').replaceChildren();this.$('.actions').hidden=true;this.$('#evidenceTitle').hidden=true;this.$('#limits').textContent='';
+      this.$('#title').textContent='작업을 선택해 주세요';this.$('#message').textContent='선택한 작업의 분석 결과가 표시됩니다.';
     }
     async analyze(payload) {
       const seq=++this.sequence;this.controller?.abort();this.controller=new AbortController();this.clear();
@@ -50,21 +51,23 @@
       this.sequence++;this.controller?.abort();
       if(result.event_id!==payload.cycle_id||!Array.isArray(result.rows)||result.rows.length!==1||(payload.process!=='auto'&&result.process!==payload.process))throw Error('요청한 작업과 분석 응답이 일치하지 않습니다.');
       this.clear();this.result=result;this.payload=payload;this.$('.panel').hidden=false;
-      const row=result.rows[0];this.$('#title').textContent=payload.lot_id+' · '+payload.cycle_id;
-      this.$('#message').textContent=row.alert===true?'확인이 필요한 이상 징후가 있습니다.':row.alert===false?'설정된 알림 기준을 넘지 않았습니다.':'현장 알림 기준 검증이 필요합니다.';
+      const row=result.rows[0];this.$('#title').textContent=payload.lot_id+' · '+(payload.display_label||payload.cycle_id);
+      this.$('#message').textContent=row.decision==='UNKNOWN'||row.input_valid===false?'센서 누락 · 판단 불가':row.alert===true?'확인이 필요한 이상 징후가 있습니다.':row.alert===false?'설정된 알림 기준을 넘지 않았습니다.':row.benchmark_alert===true?'참고 기준을 넘었습니다. 현장 확인이 필요합니다.':'현장 알림 기준 검증이 필요합니다.';
       const names={mct_hmotp:'MCT · 엔드밀',mct_nasa:'MCT · 밀링',mct_stiehl:'MCT · 숄더 밀링',pressfit:'압입 조립',inj_quality:'사출',screw_tightening:'나사 체결'};
-      const states={experimental_alert:'참고 분석 · 현장 확인 필요',needs_threshold_validation:'알림 기준 검증 필요',benchmark_estimate:'공개 데이터 기반 참고 예측',normal_reference:'확인된 정상 작업과 비교',needs_normal_reference:'정상 기준 등록 필요'};
+      const states={scenario_reference:'시나리오 분석 · 현장 검증 필요',experimental_alert:'참고 분석 · 현장 확인 필요',needs_threshold_validation:'알림 기준 검증 필요',benchmark_estimate:'공개 데이터 기반 참고 예측',normal_reference:'확인된 정상 작업과 비교',needs_normal_reference:'정상 기준 등록 필요'};
       const estimate=row[result.target],hasEstimate=Number.isFinite(estimate);
       const scoreLabel=hasEstimate?'예측값':Number.isFinite(row.anomaly_score)?'정상 기준 이탈 점수':'분류 점수';
-      const scoreValue=hasEstimate?Number(estimate.toPrecision(4))+' '+(result.capability?.unit||'(원자료 단위)'):Number.isFinite(row.anomaly_score)?Number(row.anomaly_score.toPrecision(4)):Number.isFinite(row.p)?(row.p*100).toFixed(1)+'% · 현장 확률 보정 전':'기준 확보 후 표시';
-      const details=[['공정',names[result.process]||result.process],['모델 버전',(result.release||'미확인').slice(-8)],['상태',states[result.decision_status||result.mode]||'담당자 확인 필요'],[scoreLabel,scoreValue]];
+      const scoreValue=row.decision==='UNKNOWN'||row.input_valid===false?'판단 불가':hasEstimate?Number(estimate.toPrecision(4))+' '+(result.capability?.unit||'(원자료 단위)'):Number.isFinite(row.anomaly_score)?Number(row.anomaly_score.toPrecision(4)):Number.isFinite(row.p)?(row.p*100).toFixed(1)+'% · 현장 확률 보정 전':'기준 확보 후 표시';
+      const details=[['공정',names[result.process]||result.process_label||result.process],['모델 버전',(result.field_model_id||result.release||'미확인').slice(-8)],['모델 구분',result.field_model_id?'기업별 검사 학습 모델':'기본 공정 분석 모델'],['상태',states[result.decision_status||result.mode]||'담당자 확인 필요'],[scoreLabel,scoreValue]];
+      if(row.predicted_class!=null)details.push(['분류 결과',String(row.predicted_class)]);
       for(const [k,v] of details){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=k;dd.textContent=v;this.$('#details').append(dt,dd);}
       for(const e of (row.top||[]).slice(0,4)){
         const key=e.feature||e.name||e.slot||'측정값';
         const label=this.config?.featureLabels?.[key]||key.replace(/^A_x/,'X축 진동').replace(/^A_y/,'Y축 진동').replace(/_p2p$/,' · 진폭 범위').replace(/_kurt$/,' · 첨도');
-        const raw=e.measured_value??e.value??e.contribution??e.contrib;
+        const measured=e.measured_value??e.value,contribution=e.contribution??e.contrib;
+        const raw=measured??contribution;
         const value=Number.isFinite(raw)?Number(raw.toPrecision(4)):raw??'기록 확인';
-        const li=document.createElement('li');li.textContent=label+' · '+value+' '+(this.config?.units?.[key]||'');this.$('#evidence').append(li);
+        const li=document.createElement('li');li.textContent=label+' · '+(measured==null&&contribution!=null?'기여 점수 ':'')+value+' '+(measured!=null?(this.config?.units?.[key]||''):'');this.$('#evidence').append(li);
       }
       this.$('#evidenceTitle').hidden=!this.$('#evidence').children.length;
       this.$('#limits').textContent='표시된 측정 근거는 원인 확정이 아닙니다. '+(result.field_validated?'현장 검사 결과와 함께 확인해 주세요.':'공개 데이터 기반 참고 분석이며, 현장 검증이 필요합니다.');

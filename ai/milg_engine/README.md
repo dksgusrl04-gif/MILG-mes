@@ -155,3 +155,29 @@ python engine.py --check "scenarios/*.yaml"     # 실행하지 않고 파일만 
 | HT-01 열처리 로트 위험군 (시간순) | 41 · 7 | 0.40 | **0.52** | 0.45 | 0.50 |
 
 - 설비 로그에서 나온 실험 결과 파일(`experiments/mct_methods_result.json` · `mct_realistic.json` · `toolchange.json`)은 공개 저장소에 올리지 않는다.
+
+## 시나리오 배포 연결 (0.4.0)
+
+시나리오 실행은 이제 `candidate.joblib`, `input-contract.json`, `example-features.json`도 저장합니다. 모델, 학습된 전처리/정상 기준, 임계값, 템플릿, 평가 결과, 학습 환경 정보를 함께 보관합니다.
+
+- 이상 탐지의 원래 시험 구간은 고정합니다. 불량 제거는 정상 기준 구간에서만 수행합니다.
+- 정상 기준 학습과 임계값 보정도 분리합니다. 센서 누락은 `UNKNOWN`이며 0점/정상으로 바꾸지 않습니다.
+- 공구가 2개여도 GroupKFold를 유지합니다. 시간 검증은 타임스탬프가 엄격히 분리되며 같은 시각의 기록이 양쪽에 섞이지 않습니다.
+- 이진 분류 임계값은 훈련 OOF 예측에서 정상 오경보 예산(기본 10%)을 지키면서 선택합니다. 목표 검출률을 달성하지 못하면 그 사실이 보고서에 남으며 등록 기준도 별도 검사합니다.
+- 분류 등록은 시험 AUC 0.75 이상·검출률 50% 이상·정상 오경보 10% 이하, 최소 불량 5개·정상 20개와 검증 구간 기준을 확인합니다. 회귀/다중 분류/정상 기준 전용 모델은 목적에 맞는 별도 기준을 적용합니다.
+- 비상업 연구 자료는 운영 등록에서 제외합니다. 등록에는 확인한 원출처 이용 조건을 명시해야 합니다.
+
+```powershell
+# ai 폴더에서 실행. 데이터 위치는 자신의 실제 경로로 지정합니다.
+python -X utf8 -m mlng_ai scenario milg_engine/scenarios/wld_rsw_quality.yaml `
+  --data-root "데이터를 푼 실제 루트" `
+  --out reports/scenario-run `
+  --install-state state --process wld_rsw_scenario `
+  --source-license CC-BY-4.0 --approved-by 담당자명
+```
+
+`--data-root` 아래의 파일 배치는 YAML의 `unit.path`, `label.path`를 따릅니다. 기존 ZIP/CSV를 임의로 이동할 필요 없이 경로만 맞춘 시나리오 사본을 사용해도 됩니다. 기준 미달이면 기존 활성 모델은 유지합니다. 등록된 모델은 기존 로컬 파일럿 API `/api/cycle`과 `milg-ai-widget`에서 호출됩니다.
+
+**실시간 입력 경계:** 현재 계약은 `completed_unit_features`입니다. 작업 1회가 완료된 후 시나리오와 동일한 단위 집계·구간 요약·파생 계산을 거친 특성을 전송합니다. 원시 파일 경로나 임의 파일을 API로 보내 읽게 하지 않습니다. `input-contract.json`의 칼럼과 `example-features.json`을 기준으로 MES/수집 에이전트의 입력을 맞춥니다. `trailing_baseline` 등 이력 계산이 있는 템플릿은 그 계산까지 적용된 특성을 공급해야 하며, 원시 센서값으로 대체하면 안 됩니다.
+
+등록 후에도 `alert`와 `quality_prediction`은 현장 승인 전에는 비워 둡니다. `benchmark_decision`과 근거를 검토할 수 있으나 설비 정지·자동 출하 승인을 실행하지 않습니다. 배포 환경에는 `training_environment`에 기록한 라이브러리 버전을 맞춥니다. 이 PC의 모델 등록은 GitHub Pages에 Python 서버를 공개하는 작업이 아닙니다.

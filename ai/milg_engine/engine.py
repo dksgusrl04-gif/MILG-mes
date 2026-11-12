@@ -43,16 +43,17 @@ from sklearn.model_selection import GroupKFold, StratifiedKFold, KFold, TimeSeri
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-ENGINE_VERSION = "0.3.0"    # 0.3.0: MILG 판정 엔진(mlng_ai)을 모델 후보 «milg» 로 연결 · 후보별 평가 구간 비교 · 원인 후보 컬럼
+ENGINE_VERSION = "0.4.0"    # 0.3.0: MILG 판정 엔진(mlng_ai)을 모델 후보 «milg» 로 연결 · 후보별 평가 구간 비교 · 원인 후보 컬럼
 ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(ENGINE_DIR))
 sys.path.insert(0, ENGINE_DIR)
 import schema  # noqa: E402  시나리오 YAML 스키마 검증
 import adapters  # noqa: E402  장비별 파일 읽기 플러그인
 
 try:                # MILG 판정 엔진 (같은 저장소의 mlng_ai). 없으면 후보에서 빠진다
-    from milg_core import MilgEngineClassifier  # noqa: E402
+    from milg_engine.milg_core import MilgEngineClassifier, MilgNormalScorer  # noqa: E402
 except Exception as _e:      # noqa: BLE001
-    MilgEngineClassifier, _MILG_ERR = None, f"{type(_e).__name__}: {_e}"
+    MilgEngineClassifier, MilgNormalScorer, _MILG_ERR = None, None, f"{type(_e).__name__}: {_e}"
 
 
 class ConfigError(Exception):
@@ -724,10 +725,15 @@ def attach_label(df, cfg, base):
 
 
 # ---------------------------------------------------------------- 3. features
-def pick_features(df, cfg):
+def pick_features(df, cfg, fit_mask=None):
     f = cfg.get("features", {}) or {}
     reserved = {"unit_id", "_path", "__y", "__y_raw"}
     excl = set(f.get("exclude", [])) | reserved
+    anomaly=cfg.get("anomaly",{}) or {}
+    excl |= set(anomaly.get("context",[])) | set(anomaly.get("context_fallback",[]))
+    evaluation=anomaly.get("label_eval",{}) or {}
+    excl.add(evaluation.get("column",""))
+    excl.add((evaluation.get("compare",{}) or {}).get("column",""))
     lab = cfg.get("label") or {"source": "none"}
     excl |= {lab.get("column", "")} if lab["source"] == "column" else set()
     split = cfg.get("split", {})
@@ -741,8 +747,10 @@ def pick_features(df, cfg):
     cols = [c for c in cols if c not in excl and not any(fnmatch.fnmatch(c, p) for p in f.get("exclude_glob", []))]
     X = df[cols].apply(pd.to_numeric, errors="coerce")
     max_nan = f.get("max_missing", 0.5)
-    X = X.loc[:, X.isna().mean() <= max_nan]
-    X = X.loc[:, X.nunique(dropna=True) > 1]
+    X = X.replace([np.inf,-np.inf],np.nan)
+    fitted = X if fit_mask is None else X.loc[fit_mask]
+    cols = fitted.columns[(fitted.isna().mean() <= max_nan) & (fitted.nunique(dropna=True)>1)]
+    X = X.loc[:,cols]
     return X
 
 
@@ -774,9 +782,13 @@ def make_split(df, cfg):
             test_mask = groups.isin(ug[:k]).to_numpy()
     elif m == "time":
         t = pd.to_datetime(df[s["column"]], errors="coerce") if s.get("datetime", True) else df[s["column"]]
-        order = np.argsort(t.to_numpy(), kind="stable")
-        test_mask = np.zeros(n, bool)
-        test_mask[order[int(n * (1 - ts)):]] = True
+        if t.isna().any():
+            raise ValueError("Time split requires a valid timestamp for every unit")
+        unique=np.sort(t.unique())
+        if len(unique)<2:raise ValueError("Time split requires at least two distinct timestamps")
+        cut=max(1,min(len(unique)-1,int(len(unique)*(1-ts))))
+        test_mask=t>=unique[cut]
+        groups=pd.Series(t.to_numpy(),index=df.index)
     else:
         raise ValueError(f"unknown split.method: {m}")
     return np.asarray(test_mask), groups
@@ -784,10 +796,14 @@ def make_split(df, cfg):
 
 def inner_cv(cfg, y, groups, n_splits=4):
     m = cfg.get("split", {}).get("method", "random")
-    if m == "group" and groups is not None and groups.nunique() >= 3:
+    if m == "group":
+        if groups is None or groups.nunique()<2:
+            raise ValueError("Group validation requires at least two independent training groups")
         return GroupKFold(n_splits=min(n_splits, groups.nunique()))
     if m == "time":
-        return TimeSeriesSplit(n_splits=n_splits)
+        from mlng_ai.scenario_validation import ChronologicalSplit
+        if groups is None:raise ValueError("Temporal validation requires explicit timestamps")
+        return ChronologicalSplit(groups,n_splits=n_splits)
     if cfg["task"] != "regression":
         k = int(min(n_splits, pd.Series(y).value_counts().min()))
         return StratifiedKFold(n_splits=max(2, k), shuffle=True, random_state=0)
@@ -890,17 +906,24 @@ def choose_threshold(y, proba, dec):
     if not dec or dec.get("type") == "fixed":
         return float((dec or {}).get("threshold", 0.5))
     if dec["type"] == "threshold_for_recall":
-        target = dec.get("target_recall", 0.9)
+        target_recall = dec.get("target_recall", 0.9)
         # 확률이 높은 순으로 줄 세워, 재현율 목표를 처음 넘는 지점의 확률을 임계값으로 (가장 높은 임계값)
         # 반올림하지 않는다: 확률이 아주 작은 모델은 반올림하면 전부 0이 되어 임계값이 0으로 떨어진다
         y = np.asarray(y).astype(int)
         p = np.asarray(proba, float)
         if y.sum() == 0:
             return 0.5
-        order = np.argsort(-p, kind="stable")
-        rec = np.cumsum(y[order]) / y.sum()
-        i = int(np.argmax(rec >= target))
-        return float(p[order][i])
+        budget=float(dec.get('max_false_positive_rate',.1))
+        choices=np.unique(np.concatenate([p,[np.nextafter(p.max(),np.inf)]]))
+        eligible=[]
+        for threshold in choices:
+            flag=p>=threshold
+            fpr=float(flag[y==0].mean()) if (y==0).any() else 1.
+            recall=float(flag[y==1].mean())
+            if fpr<=budget+1e-12:eligible.append((recall,float(threshold)))
+        if not eligible:return float(np.nextafter(p.max(),np.inf))
+        target_choices=[v for v in eligible if v[0]>=target_recall]
+        return max(v[1] for v in target_choices) if target_choices else max(eligible)[1]
     raise ValueError(dec["type"])
 
 
@@ -956,11 +979,11 @@ def importance(model, cols, top=10):
 
 
 # ---------------------------------------------------------------- run
-def run(path, out_root, max_seconds):
+def run(path, out_root, max_seconds, data_root=None):
     t0 = time.time()
     cfg, cfg_warnings = load_scenario(path)
     sid = cfg["scenario"]
-    base = resolve(os.path.dirname(os.path.abspath(path)), cfg.get("data_root", "."))
+    base = os.path.abspath(data_root) if data_root else resolve(os.path.dirname(os.path.abspath(path)), cfg.get("data_root", "."))
     out_dir = os.path.join(out_root, sid)
     cache_dir = os.path.join(out_root, "_cache")
     os.makedirs(out_dir, exist_ok=True)
@@ -1001,9 +1024,9 @@ def run(path, out_root, max_seconds):
     if task == "anomaly":
         return run_anomaly(cfg, df, out_dir, t0, side_cells, audit)
     df = attach_label(df, cfg, base)
-    X = pick_features(df, cfg)
-    y = df["__y"].astype(int) if task == "binary" else df["__y"]
     test_mask, groups = make_split(df, cfg)
+    X = pick_features(df, cfg, ~test_mask)
+    y = df["__y"].astype(int) if task == "binary" else df["__y"]
     Xtr, Xte, ytr, yte = X[~test_mask], X[test_mask], y[~test_mask], y[test_mask]
     gtr = groups[~test_mask] if groups is not None else None
     cv = inner_cv(cfg, ytr, gtr)
@@ -1038,6 +1061,11 @@ def run(path, out_root, max_seconds):
         return p, np.full(len(p), np.nan)
 
     pte, prte = predict(Xte)
+    validation=None
+    if task=='binary':
+        vp,vscore,covered=oof[best]
+        validation=metrics(task,ytr[covered],(vscore[covered]>=thr).astype(int),vscore[covered],dec,thr)
+
     # 후보 전부를 같은 평가 구간에서 비교 (선택은 위의 학습 구간 교차검증으로 이미 끝났다 — 여기 값은 보고용)
     test_cands = {}
     if task == "binary" and yte.nunique() > 1:
@@ -1060,6 +1088,9 @@ def run(path, out_root, max_seconds):
         "cv_scores": cv_scores, "best_model": best, "best_params": best_params, "audit": audit,
         "collapse": collapse_info,
         "test": metrics(task, yte, pte, prte, dec, thr),
+        "validation":validation, "threshold":float(thr),
+        "invalid_test_units":int((~np.isfinite(Xte.to_numpy(float)).all(axis=1)).sum()),
+        "beats_baseline":bool(cv_scores[best]>cv_scores["baseline"]),
         "test_baseline": metrics(task, yte, bpred, bpro if bpro is not None else np.zeros(len(yte)), dec, 0.5),
         "test_candidates": test_cands,
         "top_features": importance(model, list(X.columns)),
@@ -1088,6 +1119,11 @@ def run(path, out_root, max_seconds):
     for c in cfg.get("output", {}).get("carry_columns", []):
         if c in df.columns:
             out[c] = df[c].to_numpy()
+    if task in ('binary','regression','multiclass'):
+        from mlng_ai.scenario_runtime import save_bundle
+        artifact=save_bundle(out_dir,model,list(X.columns),cfg,report,float(thr))
+        sample=X.loc[np.isfinite(X.to_numpy(float)).all(axis=1)].iloc[0].to_dict()
+        with open(os.path.join(out_dir,'example-features.json'),'w',encoding='utf-8') as f:json.dump(sample,f,ensure_ascii=False)
     out.to_csv(os.path.join(out_dir, "predictions.csv"), index=False, encoding="utf-8-sig")
     json.dump(report, open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     open(os.path.join(out_dir, "report.md"), "w", encoding="utf-8").write(to_md(report))
@@ -1107,10 +1143,9 @@ def apply_trailing_baseline(df, cfg, tb):
         excl.add(lab["column"])
     df = df.sort_values(order, kind="stable").reset_index(drop=True)
     feats = [c for c in df.columns if c not in excl and pd.api.types.is_numeric_dtype(df[c])]
-    gmed = df[feats].median()
     for c in feats:
         rm = df.groupby(by)[c].transform(lambda x: x.shift(1).rolling(win, min_periods=minp).median())
-        df[c] = np.where(rm.notna(), df[c] - rm + gmed[c], df[c])
+        df[c] = np.where(rm.notna(), df[c] - rm, df[c])
     return df
 
 
@@ -1165,21 +1200,40 @@ def run_anomaly(cfg, df, out_dir, t0, cells=None, audit=None):
     a = cfg.get("anomaly", {})
     gcols = a.get("context", [])
     le = a.get("label_eval")
-    y_lab = None
-    if le:   # 라벨이 있으면: 기준(학습) 구간에서는 불량을 빼고 양품만으로 정상 범위를 잡고, 평가 구간에서 실제 불량 검출률을 잰다
-        pos = df[le["column"]].astype(str).isin([str(v) for v in le["positive"]])
-        tm0, _ = make_split(df, cfg)
-        df = df[~(pos & ~tm0)].reset_index(drop=True)
-        y_lab = df[le["column"]].astype(str).isin([str(v) for v in le["positive"]]).to_numpy()
-    X = pick_features(df, cfg)
-    test_mask, _ = make_split(df, cfg)
+    # Freeze the original holdout before removing any faulty baseline unit.
+    test_mask,_=make_split(df,cfg)
+    y_lab=None
+    if le:
+        pos=df[le["column"]].astype(str).isin([str(v) for v in le["positive"]]).to_numpy()
+        keep=~(pos & ~test_mask)
+        df=df.loc[keep].reset_index(drop=True)
+        test_mask=test_mask[keep]
+        y_lab=pos[keep]
+    baseline=np.flatnonzero(~test_mask)
+    if len(baseline)<12:raise ValueError("Need at least 12 normal reference units")
+    col=cfg.get("split",{}).get("column")
+    if col:
+        time_values=pd.to_datetime(df[col],errors='raise') if cfg['split'].get('datetime',True) else pd.to_numeric(df[col],errors='raise')
+        baseline=baseline[np.argsort(time_values.iloc[baseline].to_numpy(),kind='stable')]
+    calibration_mask=np.zeros(len(df),bool)
+    calibration_mask[baseline[max(2,int(len(baseline)*.8)):]]=True
+    tr=~(test_mask|calibration_mask)
+    X=pick_features(df,cfg,tr)
+    if X.empty:raise ValueError("No valid training sensor features")
+    valid_input=np.isfinite(X.to_numpy(float)).all(axis=1)
+    keep=test_mask|valid_input
+    df=df.loc[keep].reset_index(drop=True);X=X.loc[keep].reset_index(drop=True)
+    test_mask=test_mask[keep];calibration_mask=calibration_mask[keep];valid_input=valid_input[keep]
+    if y_lab is not None:y_lab=y_lab[keep]
+    tr=~(test_mask|calibration_mask)
+    if tr.sum()<2 or calibration_mask.sum()<2:raise ValueError('Insufficient finite reference/calibration sensors')
     ctx = df[gcols].astype(str).agg("|".join, axis=1) if gcols else pd.Series("all", index=df.index)
     cb = a.get("cell_baseline")
     cell_cov = None
     if cb and cells is not None and len(cells):
         cell_ctx = df[cb.get("context", gcols)].astype(str).agg("|".join, axis=1)
         unit_ctx = pd.Series(cell_ctx.to_numpy(), index=df["unit_id"].to_numpy())
-        train_units = set(df["unit_id"][~test_mask])
+        train_units = set(df["unit_id"][tr])
         cell_chans = [c for c in cb["channels"] if c in cells.columns]
 
         def make_cell_feats(inj=None):
@@ -1194,7 +1248,6 @@ def run_anomaly(cfg, df, out_dir, t0, cells=None, audit=None):
     k = int(a.get("top_k", 3))
     clip = float(a.get("clip_z", 20))
 
-    tr = ~test_mask
     med_g = X[tr].groupby(ctx[tr]).median()
     mad_g = (X[tr] - med_g.reindex(ctx[tr]).to_numpy()).abs().groupby(ctx[tr]).median() * 1.4826
     cnt_g = ctx[tr].value_counts()
@@ -1287,19 +1340,44 @@ def run_anomaly(cfg, df, out_dir, t0, cells=None, audit=None):
     reason = [", ".join(f"{names[j]}(희소도={z[i, j]:.1f})" for j in order[i]) for i in range(len(z))]
 
     qw, qn = a.get("warn_quantile", 0.95), a.get("ng_quantile", 0.99)
-    thr_w, thr_n = float(np.quantile(score[tr], qw)), float(np.quantile(score[tr], qn))
-    tw, tn = np.full(len(score), thr_w), np.full(len(score), thr_n)
-    if a.get("threshold_scope") == "context":
-        # 하위 공정별 임계값 (KIT 2022): 기준 구간 단위가 충분한 맥락은 그 맥락 안의 분위수로
-        min_t = int(a.get("context_threshold_min", 30))
-        st = pd.Series(score[tr]).groupby(ctx[tr].to_numpy())
-        cnt_t = st.size()
-        qw_g, qn_g = st.quantile(qw), st.quantile(qn)
-        big = cnt_t[cnt_t >= min_t].index
-        m = ctx.isin(big).to_numpy()
-        tw[m] = qw_g.reindex(ctx[m]).to_numpy()
-        tn[m] = qn_g.reindex(ctx[m]).to_numpy()
-    decision = np.where(score >= tn, "NG", np.where(score >= tw, "WARN", "OK"))
+
+    def thresholds(sc):
+        """기준 구간 점수의 분위수 → (WARN 전체값, NG 전체값, 단위별 WARN, 단위별 NG)"""
+        valid=calibration_mask & np.isfinite(sc)
+        if valid.sum()<2:raise ValueError("Insufficient valid reference scores")
+        w0, n0 = float(np.quantile(sc[valid], qw,method="higher")), float(np.quantile(sc[valid], qn,method="higher"))
+        w, n = np.full(len(sc), w0), np.full(len(sc), n0)
+        if a.get("threshold_scope") == "context":
+            # 하위 공정별 임계값 (KIT 2022): 기준 구간 단위가 충분한 맥락은 그 맥락 안의 분위수로
+            min_t = int(a.get("context_threshold_min", 30))
+            st = pd.Series(sc[valid]).groupby(ctx[valid].to_numpy())
+            cnt_t = st.size()
+            qw_g, qn_g = st.quantile(qw,interpolation="higher"), st.quantile(qn,interpolation="higher")
+            big = cnt_t[cnt_t >= min_t].index
+            m = ctx.isin(big).to_numpy()
+            w[m] = qw_g.reindex(ctx[m]).to_numpy()
+            n[m] = qn_g.reindex(ctx[m]).to_numpy()
+        return w0, n0, w, n
+
+    # 점수 후보: context(시나리오 엔진 기본 — 희소도 상위 평균) · milg(MILG 엔진 정상 기준 모드 — 벗어남 RMS). 첫 번째가 판정에 쓰이고 나머지는 나란히 비교만 한다
+    cand_names = list(a.get("candidates") or ["context"])
+    S = {"context": {"score": score, "fn": lambda Xa, rr_: score_rows(Xa, rr_)[0], "reason": reason, "model": f"context_{calib}"}}
+    if "milg" in cand_names:
+        if MilgNormalScorer is None:
+            raise RuntimeError(f"anomaly.candidates 의 milg 를 쓸 수 없습니다 (mlng_ai 를 불러오지 못함: {_MILG_ERR})")
+        ms = MilgNormalScorer(min_rows=min_n).fit(X[tr], ctx[tr])
+        sm, top_m = ms.score(X, ctx)
+        S["milg"] = {"score": sm, "fn": lambda Xa, rr_: ms.score(pd.DataFrame(Xa[rr_], columns=X.columns), ctx.iloc[rr_])[0],
+                     "reason": [f"{t}(가장 크게 벗어남)" for t in top_m], "top": top_m, "model": "milg_normal"}
+    for v in S.values():
+        v["thr_w"], v["thr_n"], v["tw"], v["tn"] = thresholds(v["score"])
+        usable=valid_input & np.isfinite(v["score"])
+        v["score"]=np.where(usable,v["score"],np.nan)
+        v["decision"] = np.where(~usable,"UNKNOWN",np.where(v["score"] > v["tn"], "NG", np.where(v["score"] > v["tw"], "WARN", "OK")))
+        v["reason"]=[r if ok else "센서 누락 · 판단 불가" for r,ok in zip(v["reason"],usable)]
+    primary = cand_names[0]
+    score, reason, decision = S[primary]["score"], S[primary]["reason"], S[primary]["decision"]
+    thr_w, thr_n, tw, tn = S[primary]["thr_w"], S[primary]["thr_n"], S[primary]["tw"], S[primary]["tn"]
 
     # 민감도 점검: 불량 샘플이 없을 때, 평가 구간 양품 신호를 일부러 f배 키워 몇 %를 잡는지 본다
     sens = []
@@ -1317,10 +1395,15 @@ def run_anomaly(cfg, df, out_dir, t0, cells=None, audit=None):
                 for j, c in enumerate(cols):
                     if c in cfi.columns:
                         Xa[:, j] = cfi[c].to_numpy()
-            s2 = score_rows(Xa, rows)[0]
-            sens.append({"test": tst["name"], "factor": float(f), "n_features": int(mask.sum()),
-                         "detect_ng": round(float((s2 >= tn[rows]).mean()), 4),
-                         "detect_warn_or_ng": round(float((s2 >= tw[rows]).mean()), 4)})
+            for cn in cand_names:
+                s2 = S[cn]["fn"](Xa, rows)
+                row = {"test": tst["name"], "factor": float(f), "n_features": int(mask.sum()),
+                       "detect_ng": round(float((s2 >= S[cn]["tn"][rows]).mean()), 4),
+                       "detect_warn_or_ng": round(float((s2 >= S[cn]["tw"][rows]).mean()), 4)}
+                if cn == primary:
+                    sens.append(row)
+                else:
+                    S[cn].setdefault("sens", []).append(row)
 
     tcol = cfg.get("split", {}).get("column")
     trend = []
@@ -1334,17 +1417,29 @@ def run_anomaly(cfg, df, out_dir, t0, cells=None, audit=None):
                           "ng_rate": round(float((decision[idx] == "NG").mean()), 4)})
         trend.sort(key=lambda r: -r["spearman_score_vs_time"])
 
-    feat_freq = pd.Series([names[j] for i in np.where(decision == "NG")[0] for j in order[i][:1]]).value_counts()
+    feat_freq = (pd.Series(S[primary]["top"][decision == "NG"]).value_counts() if primary == "milg"
+                 else pd.Series([names[j] for i in np.where(decision == "NG")[0] for j in order[i][:1]]).value_counts())
     rate = lambda m, lab: round(float((decision[m] == lab).mean()), 4) if m.any() else None
+    cand_report = {}
+    if len(cand_names) > 1:                       # 후보 나란히 비교 — 같은 기준 구간 · 같은 분위수 임계값
+        for cn in cand_names:
+            dc = S[cn]["decision"]
+            cand_report[cn] = {"model": S[cn]["model"], "primary": cn == primary,
+                               "baseline": {"warn_rate": round(float((dc[tr] == "WARN").mean()), 4), "ng_rate": round(float((dc[tr] == "NG").mean()), 4)},
+                               "test": {"warn_rate": round(float((dc[test_mask] == "WARN").mean()), 4) if test_mask.any() else None,
+                                        "ng_rate": round(float((dc[test_mask] == "NG").mean()), 4) if test_mask.any() else None},
+                               "label_eval": label_eval_metrics(y_lab, S[cn]["score"], dc, test_mask) if y_lab is not None else None,
+                               "sensitivity": sens if cn == primary else S[cn].get("sens", [])}
     report = {
         "scenario": cfg["scenario"], "process": cfg.get("process"), "title": cfg.get("title"),
         "question": cfg.get("question"), "engine_version": ENGINE_VERSION,
         "run_at": datetime.now().isoformat(timespec="seconds"),
-        "units": {"total": int(len(df)), "train": int(tr.sum()), "test": int(test_mask.sum()),
+        "units": {"total": int(len(df)), "train": int(tr.sum()), "calibration":int(calibration_mask.sum()), "test": int(test_mask.sum()),
                   "n_features": int(X.shape[1]), "contexts": int(ctx.nunique()),
                   "contexts_with_baseline": int(len(ok_ctx)), "units_without_context_baseline": int((~known).sum()),
                   "baseline_level": {k: int(v) for k, v in pd.Series(level).value_counts().items()}},
-        "split": cfg.get("split"), "best_model": f"context_{calib}",
+        "split": cfg.get("split"), "invalid_input_units":int((~valid_input).sum()), "best_model": S[primary]["model"], "candidates": cand_report,
+        "threshold_source":"held_out_normal_calibration",
         "thresholds": {"warn": round(thr_w, 3), "ng": round(thr_n, 3), "warn_quantile": qw, "ng_quantile": qn,
                        "scope": a.get("threshold_scope", "global")},
         "test": {"n": int(test_mask.sum()), "warn_rate": rate(test_mask, "WARN"), "ng_rate": rate(test_mask, "NG")},
@@ -1359,13 +1454,48 @@ def run_anomaly(cfg, df, out_dir, t0, cells=None, audit=None):
     }
     out = pd.DataFrame({
         "scenario": cfg["scenario"], "process": cfg.get("process"), "unit_id": df["unit_id"],
-        "split": np.where(test_mask, "test", "train"), "y_true": np.nan, "y_pred": np.nan,
-        "score": np.round(score, 3), "decision": decision, "model": f"context_{calib}",
+        "split": np.where(test_mask,"test",np.where(calibration_mask,"calibration","train")), "y_true": np.nan, "y_pred": np.nan,
+        "score": np.round(score, 3), "decision": decision, "input_valid":valid_input, "model": S[primary]["model"],
         "engine_version": ENGINE_VERSION, "reason": reason,
     })
+    for cn in cand_names[1:]:                     # 비교 후보의 점수 · 판정도 같이 싣는다 (MES 는 decision 만 쓰면 된다)
+        out[f"score_{cn}"] = np.round(S[cn]["score"], 3)
+        out[f"decision_{cn}"] = S[cn]["decision"]
     for c in cfg.get("output", {}).get("carry_columns", []):
         if c in df.columns:
             out[c] = df[c].to_numpy()
+    from mlng_ai.scenario_runtime import ContextReference,save_bundle
+    refs={}
+    for key in sorted(set(ctx[tr])):
+        i=np.flatnonzero(tr & (ctx.to_numpy()==key))[0]
+        refs[str(key)]=(med[i].copy(),denom[i].copy())
+    global_med=med_all.to_numpy(float)
+    global_scale=np.maximum(np.sqrt(np.nan_to_num(mad_all.to_numpy(float))**2+(shrink*rel_pool*np.abs(global_med))**2),np.maximum(mag,1e-6))
+    fallback_refs={}
+    if fb_cols:
+        for key in fcnt[fcnt>=min_n].index:
+            fm=fmed.loc[key].to_numpy(float);fs=fmad.loc[key].to_numpy(float)
+            scale=np.maximum(np.sqrt(fs**2+(shrink*rel_pool*np.abs(fm))**2),np.maximum(mag,1e-6))
+            fallback_refs[str(key)]=(fm,scale)
+    frozen=ContextReference({'columns':list(X.columns),'references':refs,'fallback_references':fallback_refs,
+        'global_reference':(global_med,global_scale),'calibration':calib,
+        'tail_reference':ref if calib=='empirical' else None,'clip':clip,'combine':combine,
+        'group_ids':gid,'group_names':gnames,'top_k':k})
+    selected=ms if primary=='milg' else frozen
+    context_thresholds={}
+    for key in sorted(set(ctx[calibration_mask])):
+        i=np.flatnonzero(calibration_mask & (ctx.to_numpy()==key))[0]
+        context_thresholds[str(key)]=[float(tw[i]),float(tn[i])]
+    thresholds_bundle={'warn':float(thr_w),'ng':float(thr_n),'contexts':context_thresholds}
+    context_columns=list(dict.fromkeys(gcols+fb_cols))
+    save_bundle(out_dir,selected,list(X.columns),cfg,report,thresholds_bundle,context_columns,
+                {'fallback_columns':fb_cols,'anomaly_context_columns':gcols})
+    valid_example=np.flatnonzero(valid_input)[0]
+    sample={**X.iloc[valid_example].to_dict(),**df[context_columns].iloc[valid_example].to_dict()}
+    with open(os.path.join(out_dir,'example-features.json'),'w',encoding='utf-8') as f:json.dump(sample,f,ensure_ascii=False)
+    if primary=='context':
+        fs,_=frozen.score(X,ctx.to_numpy(),df[fb_cols].astype(str).agg('|'.join,axis=1).to_numpy() if fb_cols else None)
+        np.testing.assert_allclose(fs[valid_input],score[valid_input],rtol=1e-8,atol=1e-8)
     out.to_csv(os.path.join(out_dir, "predictions.csv"), index=False, encoding="utf-8-sig")
     json.dump(report, open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     open(os.path.join(out_dir, "report.md"), "w", encoding="utf-8").write(to_md_anomaly(report))
@@ -1375,10 +1505,12 @@ def run_anomaly(cfg, df, out_dir, t0, cells=None, audit=None):
 def label_eval_metrics(y, score, decision, test_mask):
     t = test_mask
     yt, st, dt = y[t], score[t], decision[t]
+    usable=np.isfinite(st) & (dt!="UNKNOWN")
     out = {"test_units": int(t.sum()), "test_defects": int(yt.sum())}
-    if yt.any() and (~yt).any():
-        out["auc"] = round(float(roc_auc_score(yt, st)), 4)
-        out["pr_auc"] = round(float(average_precision_score(yt, st)), 4)
+    out["unknown_units"]=int((~usable).sum())
+    if yt[usable].any() and (~yt[usable]).any():
+        out["auc"] = round(float(roc_auc_score(yt[usable], st[usable])), 4)
+        out["pr_auc"] = round(float(average_precision_score(yt[usable], st[usable])), 4)
     out["defects_caught_ng"] = int((yt & (dt == "NG")).sum())
     out["defects_caught_warn_or_ng"] = int((yt & np.isin(dt, ["WARN", "NG"])).sum())
     good = ~yt
@@ -1402,7 +1534,9 @@ def to_md_anomaly(r):
     L = [f"# {r['scenario']} · {r['title']}", "", f"- 공정: {r['process']}", f"- 질문: {r['question']}",
          f"- 단위: 전체 {u['total']} / 기준(학습) {u['train']} / 평가 {u['test']} · 특성 {u['n_features']}개",
          f"- 비교 맥락: {u['contexts']}개 중 기준 확보 {u['contexts_with_baseline']}개 (기준 부족 단위 {u['units_without_context_baseline']}개는 전체 기준으로 비교)",
-         f"- 분할: {r['split']}", f"- 방식: 같은 맥락의 기준 구간 대비 특성별 희소도(-log10 꼬리확률) 상위 평균 ({r['best_model']})",
+         f"- 분할: {r['split']}",
+         (f"- 방식: MILG 엔진 정상 기준 모드 — 같은 맥락의 기준 구간 중앙값 · 산포 대비 벗어남 RMS ({r['best_model']})" if r["best_model"] == "milg_normal"
+          else f"- 방식: 같은 맥락의 기준 구간 대비 특성별 희소도(-log10 꼬리확률) 상위 평균 ({r['best_model']})"),
          f"- 임계값: WARN ≥ {r['thresholds']['warn']} (기준 구간 {r['thresholds']['warn_quantile']:.0%}), "
          f"NG ≥ {r['thresholds']['ng']} ({r['thresholds']['ng_quantile']:.0%})", "",
          "## " + ("오경보율 (전부 양품인 데이터)" if r.get("normal_only") else "알람률 (기준 구간 vs 평가 구간)"), "",
@@ -1423,6 +1557,19 @@ def to_md_anomaly(r):
         if ce:
             L += [f"비교 — 기존 판정({ce['name']}): 불량 {ce['defects_caught']}/{ce['test_defects']} 검출, "
                   f"양품 오경보 {ce['false_alarm']:.1%}", ""]
+    cr = r.get("candidates")
+    if cr:
+        L += ["## 점수 방식 비교 (같은 기준 구간 · 같은 분위수 임계값 — 굵게 = 판정에 쓴 방식)", "",
+              "| 방식 | 평가 WARN | 평가 NG | 실제 불량 AUC | 불량 검출 (NG · WARN 이상) | 양품 오경보 (NG · WARN 이상) |", "|---|---|---|---|---|---|"]
+        for cn, c in cr.items():
+            e = c.get("label_eval") or {}
+            det = f"{e['defects_caught_ng']}/{e['test_defects']} · {e['defects_caught_warn_or_ng']}/{e['test_defects']}" if e else "—"
+            fa = f"{e['false_alarm_ng']:.1%} · {e['false_alarm_warn_or_ng']:.1%}" if e and e.get("false_alarm_ng") is not None else "—"
+            L.append(f"| {'**' + c['model'] + '**' if c['primary'] else c['model']} | {c['test']['warn_rate']} | {c['test']['ng_rate']} | {e.get('auc', '—') if e else '—'} | {det} | {fa} |")
+        others = [(cn, c) for cn, c in cr.items() if not c["primary"] and c.get("sensitivity")]
+        for cn, c in others:
+            L += ["", f"민감도 — {c['model']}: " + " · ".join(f"{x['test']} ×{x['factor']} {x['detect_warn_or_ng']:.0%}" for x in c["sensitivity"])]
+        L += [""]
     if r.get("sensitivity"):
         L += ["## 민감도 점검 (평가 구간 양품 신호를 일부러 키웠을 때 잡아내는 비율)", "",
               "| 점검 | 배율 | 바꾼 특성 수 | NG로 검출 | WARN 이상 검출 |", "|---|---|---|---|---|"]
@@ -1470,9 +1617,19 @@ def main():
     ap.add_argument("scenarios", nargs="+")
     ap.add_argument("--out", default=os.path.join(ENGINE_DIR, "outputs"))
     ap.add_argument("--max-seconds", type=float, default=1e9, help="파일형 단위 특성 추출 시간 예산(초)")
+    ap.add_argument("--data-root",help="Override template data root")
+    ap.add_argument("--install-state",help="Register passing candidates into this local engine state")
+    ap.add_argument("--process",help="Explicit process key for a single scenario")
+    ap.add_argument("--source-license",help="Verified commercial-use source license")
+    ap.add_argument("--approved-by",help="Operator recording this registration")
     ap.add_argument("--check", action="store_true", help="실행하지 않고 시나리오 파일만 검사")
     a = ap.parse_args()
     paths = [p for s in a.scenarios for p in sorted(glob.glob(s))]
+    if a.install_state and (not a.source_license or not a.approved_by):
+        ap.error("--install-state requires --source-license and --approved-by")
+    if a.process and len(paths)!=1:
+        ap.error("--process requires exactly one scenario")
+    if not paths:ap.error("No scenario files matched")
     if a.check:
         bad = 0
         for p in paths:
@@ -1490,27 +1647,40 @@ def main():
                     print(f"     경고  {w}")
         return 1 if bad else 0
     summary = []
+    failures=0
     for p in paths:
         if os.path.basename(p).startswith("_"):
             continue
         try:
-            r = run(p, a.out, a.max_seconds)
+            r = run(p, a.out, a.max_seconds, a.data_root)
             t = r["test"]
             key = {k: t.get(k) for k in ("recall", "precision", "false_positive_rate", "pr_auc", "macro_f1", "accuracy", "mae", "r2", "warn_rate", "ng_rate") if k in t}
             print(f"[OK] {r['scenario']:<22} {r['best_model']:<14} {key}  ({r['elapsed_sec']}s)")
+            if a.install_state:
+                if r.get('deployment_gate',{}).get('passed'):
+                    from mlng_ai.scenario_runtime import install
+                    process_key=a.process or ('scenario_'+r['scenario'].lower().replace('-','_'))
+                    release=install(os.path.join(a.out,r['scenario'],'candidate.joblib'),a.install_state,process_key,a.source_license,a.approved_by,os.path.join(a.out,r['scenario'],'deployment'))
+                    print(f"[REGISTERED] {process_key}: {release}")
+                else:
+                    print(f"[HELD] {r['scenario']}: evaluation gate failed; existing routes retained")
             summary.append({"scenario": r["scenario"], "process": r["process"], "model": r["best_model"], **key})
         except Incomplete as e:
+            failures+=1
             print(f"[..] {os.path.basename(p)}: {e}")
         except ConfigError as e:
+            failures+=1
             print(f"[설정 오류] {os.path.basename(p)} — 실행하지 않았습니다 ({len(e.errors)}개)")
             for m in e.errors:
                 print(f"     오류  {m}")
             for w in e.warnings:
                 print(f"     경고  {w}")
         except Exception as e:
+            failures+=1
             print(f"[ERR] {os.path.basename(p)}: {type(e).__name__}: {e}")
     if summary:
         pd.DataFrame(summary).to_csv(os.path.join(a.out, "summary.csv"), index=False, encoding="utf-8-sig")
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

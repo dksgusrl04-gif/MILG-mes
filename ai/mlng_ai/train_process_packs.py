@@ -196,7 +196,7 @@ def heat(quality, optimization):
     return result, artifact, X.loc[masks[2]].head(1)
 
 
-def activate(state, out, artifacts, capability_details=None):
+def activate(state, out, artifacts, capability_details=None, route_kind="specialist", approved_by="public-process-pack"):
     """Extend an existing pilot snapshot and atomically switch its pointer."""
     from .service import Service
     prior = (state/'pilot-active.json').read_bytes()
@@ -213,7 +213,7 @@ def activate(state, out, artifacts, capability_details=None):
     manifest.update(id=release.name,created=now(),process_pack_report=str(out/'report.json'))
     router = Router(release)
     for key, (artifact, result, sample) in artifacts.items():
-        router.register(key,artifact,'specialist','public-process-pack')
+        router.register(key,artifact,route_kind,approved_by)
         manifest['processes'][key] = {'mode':'public_benchmark_shadow','target':joblib.load(artifact)['target'],
             'alert_enabled':False,'auto_route':False,'quality_release_authority':False,
             'test':result['test']}

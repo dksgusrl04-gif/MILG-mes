@@ -69,3 +69,15 @@ await widget.analyze({
 
 회귀 테스트: `ai/tests/test_widget_engine.py`, `ai/tests/test_pilot.py`.
 실제 엔진 연결 테스트: `node tests/widget-live.test.js` (Windows Edge 사용). 이 테스트는 독립 임시 상태 디렉터리에서 실행하며 운영 DB를 수정하지 않는다.
+
+## 시나리오 엔진 결과 호출
+
+2026-11-12 기준 `wld_rsw_scenario`가 로컬 엔진에 등록됐습니다. `state/pilot-active.json`이 가리키는 release의 `examples/wld_rsw_scenario.json`이 실제 입력 예시입니다. 파일럿 페이지에서 해당 JSON을 넣거나 위젯 `analyze()`에 같은 계약의 작업을 전달하면 모델 추론 결과와 근거가 표시됩니다. 센서가 누락되면 `UNKNOWN`으로 표시하고 이전 근거는 사용하지 않습니다.
+
+현재 입력은 **완료 작업의 시나리오 특성**입니다. 센서 원시 스트림의 임의 칼럼을 자동 변환하는 기능으로 해석하면 안 됩니다. 동일한 템플릿으로 집계·파생된 특성을 전송합니다. 상세 실행 명령과 등록 기준은 `milg_engine/README.md`를 참조하세요.
+
+## 기존 MES에서 실제 위젯 시연
+
+같은 파일럿 서버에서 `/mes/`를 엽니다. 공정 실적 → MCT 가공 → 작업별 AI에서 공구/LOT·가공 회차를 선택합니다. 위젯은 `MLNG.S.mach.runs`의 **선택된 작업**에서 `smcAC`, `smcDC`, `vib_table`, `vib_spindle`, `AE_table`, `AE_spindle`을 읽어 `mct_nasa`로 전송합니다. `vb`, `bad`, 기존 예측 점수는 모델 입력에서 제외합니다. `demo:true`로 저장하며 자동 재학습하지 않습니다.
+
+조사·보류 기록은 품질 → MILG 조사 이력에서 확인합니다. 토큰은 메모리에만 있고 새로고침하면 재입력합니다. 다른 LOT·공정으로 이동하면 이전 근거를 지우고, 매핑이 없으면 추론하지 않습니다. 기존 정적 위젯과 로컬 실시간 위젯을 동시에 표시하지 않습니다. 실제 MES 통합 시험은 `node tests/mes-widget-live.test.js`입니다.
